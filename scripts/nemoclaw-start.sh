@@ -115,6 +115,47 @@ verify_config_integrity() {
   fi
 }
 
+export_gateway_token() {
+  local token
+  token="$(
+    python3 - <<'PYTOKEN'
+import json
+try:
+    cfg = json.load(open('/sandbox/.openclaw/openclaw.json'))
+    print(cfg.get('gateway', {}).get('auth', {}).get('token', ''))
+except Exception:
+    print('')
+PYTOKEN
+  )"
+  if [ -z "$token" ]; then
+    return
+  fi
+  export OPENCLAW_GATEWAY_TOKEN="$token"
+
+  # Persist to .bashrc/.profile so interactive sessions (openshell sandbox
+  # connect) also see the token — same pattern as the proxy config above.
+  local marker_begin="# nemoclaw-gateway-token begin"
+  local marker_end="# nemoclaw-gateway-token end"
+  local snippet
+  snippet="${marker_begin}
+export OPENCLAW_GATEWAY_TOKEN=\"${token}\"
+${marker_end}"
+
+  for rc_file in "${_SANDBOX_HOME}/.bashrc" "${_SANDBOX_HOME}/.profile"; do
+    if [ -f "$rc_file" ] && grep -qF "$marker_begin" "$rc_file" 2>/dev/null; then
+      local tmp
+      tmp="$(mktemp)"
+      awk -v b="$marker_begin" -v e="$marker_end" \
+        '$0==b{s=1;next} $0==e{s=0;next} !s' "$rc_file" >"$tmp"
+      printf '%s\n' "$snippet" >>"$tmp"
+      cat "$tmp" >"$rc_file"
+      rm -f "$tmp"
+    elif [ -w "$rc_file" ] || [ -w "$(dirname "$rc_file")" ]; then
+      printf '\n%s\n' "$snippet" >>"$rc_file"
+    fi
+  done
+}
+
 write_auth_profile() {
   if [ -z "${NVIDIA_API_KEY:-}" ]; then
     return
@@ -345,6 +386,7 @@ if [ "$(id -u)" -ne 0 ]; then
     echo "[SECURITY] Config integrity check failed — refusing to start (non-root mode)" >&2
     exit 1
   fi
+  export_gateway_token
   write_auth_profile
 
   if [ ${#NEMOCLAW_CMD[@]} -gt 0 ]; then
@@ -374,6 +416,7 @@ fi
 
 # Verify config integrity before starting anything
 verify_config_integrity
+export_gateway_token
 
 # Write auth profile as sandbox user (needs writable .openclaw-data)
 gosu sandbox bash -c "$(declare -f write_auth_profile); write_auth_profile"
