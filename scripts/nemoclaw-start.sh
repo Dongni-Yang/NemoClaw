@@ -127,15 +127,28 @@ except Exception:
     print('')
 PYTOKEN
   )"
+  local marker_begin="# nemoclaw-gateway-token begin"
+  local marker_end="# nemoclaw-gateway-token end"
+
   if [ -z "$token" ]; then
+    # Remove any stale marker blocks from rc files so revoked/old tokens
+    # are not re-exported in later interactive sessions.
+    for rc_file in "${_SANDBOX_HOME}/.bashrc" "${_SANDBOX_HOME}/.profile"; do
+      if [ -f "$rc_file" ] && grep -qF "$marker_begin" "$rc_file" 2>/dev/null; then
+        local tmp
+        tmp="$(mktemp)"
+        awk -v b="$marker_begin" -v e="$marker_end" \
+          '$0==b{s=1;next} $0==e{s=0;next} !s' "$rc_file" >"$tmp"
+        cat "$tmp" >"$rc_file"
+        rm -f "$tmp"
+      fi
+    done
     return
   fi
   export OPENCLAW_GATEWAY_TOKEN="$token"
 
   # Persist to .bashrc/.profile so interactive sessions (openshell sandbox
   # connect) also see the token — same pattern as the proxy config above.
-  local marker_begin="# nemoclaw-gateway-token begin"
-  local marker_end="# nemoclaw-gateway-token end"
   local snippet
   snippet="${marker_begin}
 export OPENCLAW_GATEWAY_TOKEN=\"${token}\"
