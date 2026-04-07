@@ -115,18 +115,21 @@ verify_config_integrity() {
   fi
 }
 
-export_gateway_token() {
-  local token
-  token="$(
-    python3 - <<'PYTOKEN'
+_read_gateway_token() {
+  python3 - <<'PYTOKEN'
 import json
 try:
-    cfg = json.load(open('/sandbox/.openclaw/openclaw.json'))
+    with open('/sandbox/.openclaw/openclaw.json') as f:
+        cfg = json.load(f)
     print(cfg.get('gateway', {}).get('auth', {}).get('token', ''))
 except Exception:
     print('')
 PYTOKEN
-  )"
+}
+
+export_gateway_token() {
+  local token
+  token="$(_read_gateway_token)"
   local marker_begin="# nemoclaw-gateway-token begin"
   local marker_end="# nemoclaw-gateway-token end"
 
@@ -259,19 +262,7 @@ configure_messaging_channels() {
 print_dashboard_urls() {
   local token chat_ui_base local_url remote_url
 
-  token="$(
-    python3 - <<'PYTOKEN'
-import json
-import os
-path = '/sandbox/.openclaw/openclaw.json'
-try:
-    cfg = json.load(open(path))
-except Exception:
-    print('')
-else:
-    print(cfg.get('gateway', {}).get('auth', {}).get('token', ''))
-PYTOKEN
-  )"
+  token="$(_read_gateway_token)"
 
   chat_ui_base="${CHAT_UI_URL%/}"
   local_url="http://127.0.0.1:${PUBLIC_PORT}/"
