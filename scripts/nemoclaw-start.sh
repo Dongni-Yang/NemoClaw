@@ -136,6 +136,7 @@ export_gateway_token() {
   if [ -z "$token" ]; then
     # Remove any stale marker blocks from rc files so revoked/old tokens
     # are not re-exported in later interactive sessions.
+    unset OPENCLAW_GATEWAY_TOKEN
     for rc_file in "${_SANDBOX_HOME}/.bashrc" "${_SANDBOX_HOME}/.profile"; do
       if [ -f "$rc_file" ] && grep -qF "$marker_begin" "$rc_file" 2>/dev/null; then
         local tmp
@@ -152,9 +153,13 @@ export_gateway_token() {
 
   # Persist to .bashrc/.profile so interactive sessions (openshell sandbox
   # connect) also see the token — same pattern as the proxy config above.
+  # Shell-escape the token so quotes/dollars/backticks cannot break the
+  # sourced snippet or allow code injection.
+  local escaped_token
+  escaped_token="$(printf '%s' "$token" | sed "s/'/'\\\\''/g")"
   local snippet
   snippet="${marker_begin}
-export OPENCLAW_GATEWAY_TOKEN=\"${token}\"
+export OPENCLAW_GATEWAY_TOKEN='${escaped_token}'
 ${marker_end}"
 
   for rc_file in "${_SANDBOX_HOME}/.bashrc" "${_SANDBOX_HOME}/.profile"; do
