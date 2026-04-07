@@ -126,7 +126,7 @@ describe("nemoclaw-start configure guard (#1114)", () => {
     // The guard installs a heredoc containing a shell function — extract the
     // full block between the function definition and the next top-level function.
     const guardBlock = src.match(
-      /install_configure_guard\(\) \{([\s\S]*?)^validate_openclaw_symlinks/m
+      /install_configure_guard\(\) \{([\s\S]*?)^validate_openclaw_symlinks/m,
     );
     expect(guardBlock).toBeTruthy();
     const body = guardBlock[1];
@@ -137,7 +137,7 @@ describe("nemoclaw-start configure guard (#1114)", () => {
 
   it("passes non-configure subcommands through to the real binary", () => {
     const guardBlock = src.match(
-      /install_configure_guard\(\) \{([\s\S]*?)^validate_openclaw_symlinks/m
+      /install_configure_guard\(\) \{([\s\S]*?)^validate_openclaw_symlinks/m,
     );
     expect(guardBlock).toBeTruthy();
     expect(guardBlock[1]).toContain('command openclaw "$@"');
@@ -145,7 +145,7 @@ describe("nemoclaw-start configure guard (#1114)", () => {
 
   it("uses idempotent marker blocks", () => {
     const guardBlock = src.match(
-      /install_configure_guard\(\) \{([\s\S]*?)^validate_openclaw_symlinks/m
+      /install_configure_guard\(\) \{([\s\S]*?)^validate_openclaw_symlinks/m,
     );
     expect(guardBlock).toBeTruthy();
     const body = guardBlock[1];
