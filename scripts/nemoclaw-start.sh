@@ -172,6 +172,49 @@ ${marker_end}"
   done
 }
 
+install_configure_guard() {
+  # Installs a shell function that intercepts `openclaw configure` inside the
+  # sandbox. The config is Landlock read-only — atomic writes to
+  # /sandbox/.openclaw/ fail with EACCES. Instead of a cryptic error, guide
+  # the user to the correct host-side workflow.
+  local marker_begin="# nemoclaw-configure-guard begin"
+  local marker_end="# nemoclaw-configure-guard end"
+  local snippet
+  read -r -d '' snippet <<'GUARD' || true
+# nemoclaw-configure-guard begin
+openclaw() {
+  case "$1" in
+    configure)
+      echo "Error: 'openclaw configure' cannot modify config inside the sandbox." >&2
+      echo "The sandbox config is read-only (Landlock enforced) for security." >&2
+      echo "" >&2
+      echo "To change your configuration, exit the sandbox and run:" >&2
+      echo "  nemoclaw onboard --resume" >&2
+      echo "" >&2
+      echo "This rebuilds the sandbox with your updated settings." >&2
+      return 1
+      ;;
+  esac
+  command openclaw "$@"
+}
+# nemoclaw-configure-guard end
+GUARD
+
+  for rc_file in "${_SANDBOX_HOME}/.bashrc" "${_SANDBOX_HOME}/.profile"; do
+    if [ -f "$rc_file" ] && grep -qF "$marker_begin" "$rc_file" 2>/dev/null; then
+      local tmp
+      tmp="$(mktemp)"
+      awk -v b="$marker_begin" -v e="$marker_end" \
+        '$0==b{s=1;next} $0==e{s=0;next} !s' "$rc_file" >"$tmp"
+      printf '%s\n' "$snippet" >>"$tmp"
+      cat "$tmp" >"$rc_file"
+      rm -f "$tmp"
+    elif [ -w "$rc_file" ] || [ -w "$(dirname "$rc_file")" ]; then
+      printf '\n%s\n' "$snippet" >>"$rc_file"
+    fi
+  done
+}
+
 validate_openclaw_symlinks() {
   local entry name target expected
   for entry in /sandbox/.openclaw/*; do
@@ -456,6 +499,7 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
   fi
   export_gateway_token
+  install_configure_guard
   configure_messaging_channels
   validate_openclaw_symlinks
   write_auth_profile
@@ -488,6 +532,7 @@ fi
 # Verify config integrity before starting anything
 verify_config_integrity
 export_gateway_token
+install_configure_guard
 
 # Inject messaging channel config if provider tokens are present.
 # Must run AFTER integrity check (to detect build-time tampering) and
