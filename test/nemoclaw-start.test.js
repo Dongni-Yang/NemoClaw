@@ -123,24 +123,32 @@ describe("nemoclaw-start configure guard (#1114)", () => {
   });
 
   it("intercepts openclaw configure with an actionable error", () => {
-    const guardFn = src.match(/install_configure_guard\(\) \{([\s\S]*?)^(?=\w)/m);
-    expect(guardFn).toBeTruthy();
-    const body = guardFn[1];
-    expect(body).toContain('configure)');
+    // The guard installs a heredoc containing a shell function — extract the
+    // full block between the function definition and the next top-level function.
+    const guardBlock = src.match(
+      /install_configure_guard\(\) \{([\s\S]*?)^validate_openclaw_symlinks/m
+    );
+    expect(guardBlock).toBeTruthy();
+    const body = guardBlock[1];
+    expect(body).toContain("configure)");
     expect(body).toContain("nemoclaw onboard --resume");
     expect(body).toContain("return 1");
   });
 
   it("passes non-configure subcommands through to the real binary", () => {
-    const guardFn = src.match(/install_configure_guard\(\) \{([\s\S]*?)^(?=\w)/m);
-    expect(guardFn).toBeTruthy();
-    expect(guardFn[1]).toContain('command openclaw "$@"');
+    const guardBlock = src.match(
+      /install_configure_guard\(\) \{([\s\S]*?)^validate_openclaw_symlinks/m
+    );
+    expect(guardBlock).toBeTruthy();
+    expect(guardBlock[1]).toContain('command openclaw "$@"');
   });
 
   it("uses idempotent marker blocks", () => {
-    const guardFn = src.match(/install_configure_guard\(\) \{([\s\S]*?)^(?=\w)/m);
-    expect(guardFn).toBeTruthy();
-    const body = guardFn[1];
+    const guardBlock = src.match(
+      /install_configure_guard\(\) \{([\s\S]*?)^validate_openclaw_symlinks/m
+    );
+    expect(guardBlock).toBeTruthy();
+    const body = guardBlock[1];
     expect(body).toContain("nemoclaw-configure-guard begin");
     expect(body).toContain("nemoclaw-configure-guard end");
     // Uses awk to strip existing block before re-inserting
