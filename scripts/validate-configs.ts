@@ -54,7 +54,8 @@ function discoverTargets(): ConfigTarget[] {
       console.warn("WARN: presets directory exists but contains no .yaml/.yml files — no preset validation performed");
     }
   } catch (err) {
-    if ((err as { code?: string }).code !== "ENOENT") throw err;
+    const code = (err as { code?: string }).code;
+    if (code !== "ENOENT" && code !== "ENOTDIR") throw err;
     // presets directory may not exist — not an error
   }
 
@@ -102,7 +103,7 @@ function main(): void {
     const schemaIdx = args.indexOf("--schema");
     const file = args[fileIdx + 1];
     const schema = args[schemaIdx + 1];
-    if (!file || !schema || file.startsWith("--") || schema.startsWith("--")) {
+    if (!file || !schema || file.startsWith("-") || schema.startsWith("-")) {
       console.error("Usage: validate-configs.ts --file <config> --schema <schema>");
       process.exitCode = 1;
       return;
