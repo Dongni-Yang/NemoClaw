@@ -102,7 +102,7 @@ function main(): void {
     const schemaIdx = args.indexOf("--schema");
     const file = args[fileIdx + 1];
     const schema = args[schemaIdx + 1];
-    if (!file || !schema) {
+    if (!file || !schema || file.startsWith("--") || schema.startsWith("--")) {
       console.error("Usage: validate-configs.ts --file <config> --schema <schema>");
       process.exitCode = 1;
       return;
