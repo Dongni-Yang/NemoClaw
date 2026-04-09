@@ -64,4 +64,4 @@ components:
         endpoints:
           - host: "nim-service.local"
             port: 8000
-            protocol: rest
+            access: full
