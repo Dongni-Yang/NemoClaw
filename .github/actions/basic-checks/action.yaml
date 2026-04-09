@@ -40,7 +40,7 @@ runs:
 
     - name: Validate config schemas
       shell: bash
-      run: npx tsx scripts/validate-configs.ts
+      run: npm run validate:configs
 
     - name: Run checks
       shell: bash

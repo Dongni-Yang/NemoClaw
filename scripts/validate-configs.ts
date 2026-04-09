@@ -51,7 +51,8 @@ function discoverTargets(): ConfigTarget[] {
         files: presetFiles,
       });
     }
-  } catch {
+  } catch (err) {
+    if ((err as { code?: string }).code !== "ENOENT") throw err;
     // presets directory may not exist — not an error
   }
 
@@ -87,9 +88,16 @@ function main(): void {
 
   let targets: ConfigTarget[];
 
-  const fileIdx = args.indexOf("--file");
-  const schemaIdx = args.indexOf("--schema");
-  if (fileIdx !== -1 && schemaIdx !== -1) {
+  const hasFileFlag = args.indexOf("--file") !== -1;
+  const hasSchemaFlag = args.indexOf("--schema") !== -1;
+  if (hasFileFlag !== hasSchemaFlag) {
+    console.error("Usage: validate-configs.ts --file <config> --schema <schema>");
+    process.exitCode = 1;
+    return;
+  }
+  if (hasFileFlag && hasSchemaFlag) {
+    const fileIdx = args.indexOf("--file");
+    const schemaIdx = args.indexOf("--schema");
     const file = args[fileIdx + 1];
     const schema = args[schemaIdx + 1];
     if (!file || !schema) {

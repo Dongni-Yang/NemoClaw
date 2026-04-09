@@ -105,7 +105,8 @@ describe("policy-preset.schema.json", () => {
   let presetFiles: string[] = [];
   try {
     presetFiles = readdirSync(presetsDir).filter((f) => f.endsWith(".yaml"));
-  } catch {
+  } catch (err) {
+    if ((err as { code?: string }).code !== "ENOENT") throw err;
     // directory may not exist
   }
 

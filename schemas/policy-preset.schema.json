@@ -28,7 +28,6 @@
     "networkPolicyEntry": {
       "type": "object",
       "required": ["name", "endpoints"],
-      "additionalProperties": false,
       "properties": {
         "name": { "type": "string" },
         "endpoints": {
@@ -47,32 +46,22 @@
       "required": ["host", "port"],
       "properties": {
         "host": { "type": "string" },
-        "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
-      },
-      "unevaluatedProperties": false,
-      "oneOf": [
-        {
-          "description": "REST-inspected endpoint with rules.",
-          "required": ["protocol"],
-          "properties": {
-            "protocol": { "const": "rest" },
-            "enforcement": { "type": "string", "enum": ["enforce", "audit"] },
-            "tls": { "type": "string", "enum": ["terminate", "passthrough"] },
-            "rules": {
-              "type": "array",
-              "items": { "$ref": "#/$defs/rule" },
-              "minItems": 1
-            }
-          }
-        },
-        {
-          "description": "Full-access CONNECT tunnel (e.g. WebSocket).",
-          "required": ["access"],
-          "properties": {
-            "access": { "const": "full" }
-          }
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "protocol": { "type": "string", "enum": ["rest"] },
+        "enforcement": { "type": "string", "enum": ["enforce", "audit"] },
+        "tls": { "type": "string", "enum": ["terminate", "passthrough"] },
+        "access": { "type": "string", "enum": ["full"] },
+        "rules": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/rule" },
+          "minItems": 1
         }
-      ]
+      },
+      "if": {
+        "properties": { "protocol": { "const": "rest" } },
+        "required": ["protocol"]
+      },
+      "then": { "required": ["rules"] }
     },
     "rule": {
       "type": "object",
