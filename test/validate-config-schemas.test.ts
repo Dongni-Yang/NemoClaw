@@ -70,6 +70,31 @@ describe("blueprint.schema.json", () => {
     const bad = { ...(data as object), unknownField: true };
     expect(validate(bad)).toBe(false);
   });
+
+  it("rejects blueprint policyAddition endpoint with protocol rest but no rules", () => {
+    const bad = {
+      version: "1.0.0",
+      profiles: ["default"],
+      components: {
+        sandbox: { image: "img:latest", name: "test-sandbox" },
+        inference: {
+          profiles: {
+            default: { provider_type: "openai", endpoint: "https://api.openai.com" },
+          },
+        },
+        policy: {
+          base: "policies/openclaw-sandbox.yaml",
+          additions: {
+            my_service: {
+              name: "My Service",
+              endpoints: [{ host: "api.example.com", port: 443, protocol: "rest" }],
+            },
+          },
+        },
+      },
+    };
+    expect(validate(bad)).toBe(false);
+  });
 });
 
 // ── Base sandbox policy ──────────────────────────────────────────────────────
@@ -94,6 +119,19 @@ describe("sandbox-policy.schema.json", () => {
     const bad = { ...(data as object), extra: true };
     expect(validate(bad)).toBe(false);
   });
+
+  it("rejects sandbox-policy endpoint with protocol rest but no rules", () => {
+    const bad = {
+      version: 1,
+      network_policies: {
+        test_service: {
+          name: "Test Service",
+          endpoints: [{ host: "api.example.com", port: 443, protocol: "rest" }],
+        },
+      },
+    };
+    expect(validate(bad)).toBe(false);
+  });
 });
 
 // ── Policy presets ───────────────────────────────────────────────────────────
@@ -104,7 +142,7 @@ describe("policy-preset.schema.json", () => {
 
   let presetFiles: string[] = [];
   try {
-    presetFiles = readdirSync(presetsDir).filter((f) => f.endsWith(".yaml"));
+    presetFiles = readdirSync(presetsDir).filter((f) => f.endsWith(".yaml") || f.endsWith(".yml"));
   } catch (err) {
     if ((err as { code?: string }).code !== "ENOENT") throw err;
     // directory may not exist
@@ -124,6 +162,19 @@ describe("policy-preset.schema.json", () => {
 
   it("rejects preset without network_policies", () => {
     const bad = { preset: { name: "test", description: "test" } };
+    expect(validate(bad)).toBe(false);
+  });
+
+  it("rejects preset endpoint with protocol rest but no rules", () => {
+    const bad = {
+      preset: { name: "test", description: "test" },
+      network_policies: {
+        test_service: {
+          name: "Test Service",
+          endpoints: [{ host: "api.example.com", port: 443, protocol: "rest" }],
+        },
+      },
+    };
     expect(validate(bad)).toBe(false);
   });
 });

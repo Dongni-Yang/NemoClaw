@@ -43,13 +43,15 @@ function discoverTargets(): ConfigTarget[] {
   const presetsDir = join(REPO_ROOT, "nemoclaw-blueprint/policies/presets");
   try {
     const presetFiles = readdirSync(presetsDir)
-      .filter((f) => f.endsWith(".yaml"))
+      .filter((f) => f.endsWith(".yaml") || f.endsWith(".yml"))
       .map((f) => `nemoclaw-blueprint/policies/presets/${f}`);
     if (presetFiles.length > 0) {
       targets.push({
         schema: "schemas/policy-preset.schema.json",
         files: presetFiles,
       });
+    } else {
+      console.warn("WARN: presets directory exists but contains no .yaml/.yml files — no preset validation performed");
     }
   } catch (err) {
     if ((err as { code?: string }).code !== "ENOENT") throw err;
