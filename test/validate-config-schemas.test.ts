@@ -71,6 +71,40 @@ describe("blueprint.schema.json", () => {
     expect(validate(bad)).toBe(false);
   });
 
+  it("rejects blueprint with unknown nested component property", () => {
+    const bad = {
+      ...(data as object),
+      components: {
+        ...((data as Record<string, any>).components),
+        inference: {
+          ...((data as Record<string, any>).components.inference),
+          extraField: true,
+        },
+      },
+    };
+    expect(validate(bad)).toBe(false);
+  });
+
+  it("rejects blueprint inference profile with unknown property", () => {
+    const bad = {
+      ...(data as object),
+      components: {
+        ...((data as Record<string, any>).components),
+        inference: {
+          ...((data as Record<string, any>).components.inference),
+          profiles: {
+            ...((data as Record<string, any>).components.inference.profiles),
+            default: {
+              ...((data as Record<string, any>).components.inference.profiles.default),
+              typoField: true,
+            },
+          },
+        },
+      },
+    };
+    expect(validate(bad)).toBe(false);
+  });
+
   it("rejects blueprint policyAddition endpoint with protocol rest but no rules", () => {
     const bad = {
       version: "1.0.0",
