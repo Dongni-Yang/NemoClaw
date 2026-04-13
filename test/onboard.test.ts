@@ -838,13 +838,23 @@ describe("onboard helpers", () => {
     const onboardPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "onboard.js"));
 
     fs.mkdirSync(fakeBin, { recursive: true });
-    // Fake openshell: returns diagnostic log output for `doctor logs`, fails otherwise.
+    // Fake openshell:
+    //   gateway start  — emits ANSI color codes + \r\n (mirrors real gateway output), exits 1
+    //   doctor logs    — emits ANSI sequences, an OOMKilled message, and a fake nvapi- credential
+    //                    to exercise ANSI stripping and redaction in the doctor-log path
     fs.writeFileSync(
       path.join(fakeBin, "openshell"),
       `#!/usr/bin/env bash
 if [[ "$*" == *"doctor"*"logs"* ]]; then
-  printf "k3s cluster crashed: OOMKilled\\n  Container nemoclaw_k3s ran out of memory\\n"
+  printf "\\033[31mERROR\\033[0m k3s cluster crashed: OOMKilled\\r\\n"
+  printf "  Container nemoclaw_k3s ran out of memory\\r\\n"
+  printf "  Gateway auth token: nvapi-fakecredential-9999\\r\\n"
   exit 0
+fi
+if [[ "$*" == *"gateway"*"start"* ]]; then
+  printf "\\033[33mDeploying\\033[0m gateway nemoclaw...\\r\\n"
+  printf "\\r\\nWaiting for gateway health...\\r\\n"
+  exit 1
 fi
 exit 1
 `,
@@ -894,6 +904,8 @@ startGateway(null).catch(() => {});
 
     // The process exits 1 because startGateway calls process.exit(1) on failure.
     assert.equal(result.status, 1, `unexpected exit code; stderr:\n${result.stderr}`);
+
+    // Fix 3: doctor logs are auto-printed to stderr.
     assert.ok(
       result.stderr.includes("Gateway logs:"),
       `expected "Gateway logs:" header in stderr:\n${result.stderr}`,
@@ -901,6 +913,39 @@ startGateway(null).catch(() => {});
     assert.ok(
       result.stderr.includes("OOMKilled"),
       `expected doctor log output in stderr:\n${result.stderr}`,
+    );
+
+    // ANSI sequences must be stripped from both stdout (gateway start output) and
+    // stderr (doctor logs). A raw \x1b in the output means the regex failed.
+    assert.ok(
+      !result.stdout.includes("\x1b"),
+      `unexpected ANSI escape in stdout:\n${result.stdout}`,
+    );
+    assert.ok(
+      !result.stderr.includes("\x1b"),
+      `unexpected ANSI escape in stderr:\n${result.stderr}`,
+    );
+
+    // Credentials in doctor logs must be redacted, never printed verbatim.
+    assert.ok(
+      !result.stderr.includes("nvapi-fakecredential-9999"),
+      `credential leaked verbatim in stderr:\n${result.stderr}`,
+    );
+
+    // Fix 2: the \r\n -> \naiting rendering artifact must not appear.
+    assert.ok(
+      !result.stdout.includes("\naiting"),
+      `\\naiting artifact present in stdout:\n${result.stdout}`,
+    );
+
+    // Fix 1: gateway start output is printed per-line under the header, not as
+    // one collapsed blob. "Deploying" and "Waiting" must appear on separate lines.
+    const gatewayLines = result.stdout
+      .split("\n")
+      .filter((l) => l.includes("Deploying") || l.includes("Waiting"));
+    assert.ok(
+      gatewayLines.length >= 2,
+      `expected "Deploying" and "Waiting" on separate lines in stdout:\n${result.stdout}`,
     );
   });
 
