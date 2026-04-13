@@ -2088,7 +2088,7 @@ async function startGatewayWithOptions(_gpu, { exitOnFailure = true } = {}) {
           },
         );
         if (startResult.status !== 0) {
-          const lines = String(startResult.output || "")
+          const lines = String(redact(startResult.output || ""))
             .split("\n")
             .map((l) => compactText(l))
             .filter(Boolean)
@@ -2135,12 +2135,17 @@ async function startGatewayWithOptions(_gpu, { exitOnFailure = true } = {}) {
       console.error("  Gateway state preserved for diagnostics.");
       console.error("");
       try {
-        const logs = runCaptureOpenshell(["doctor", "logs", "--name", GATEWAY_NAME], {
-          ignoreError: true,
-        });
+        const logs = redact(
+          runCaptureOpenshell(["doctor", "logs", "--name", GATEWAY_NAME], {
+            ignoreError: true,
+          }),
+        );
         if (logs) {
           console.error("  Gateway logs:");
-          for (const line of String(logs).split("\n").filter(Boolean)) {
+          for (const line of String(logs)
+            .split("\n")
+            .map((l) => l.replace(/\r/g, ""))
+            .filter(Boolean)) {
             console.error(`    ${line}`);
           }
           console.error("");
