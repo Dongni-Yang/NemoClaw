@@ -23,8 +23,9 @@ function envInt(name, fallback) {
 /** Inference timeout (seconds) for local providers (Ollama, vLLM, NIM). */
 const LOCAL_INFERENCE_TIMEOUT_SECS = envInt("NEMOCLAW_LOCAL_INFERENCE_TIMEOUT", 180);
 
-/** Strip ANSI escape sequences before printing process output to the terminal. */
-const ANSI_RE = /\x1b\[[0-9;]*m/g;
+/** Strip ANSI escape sequences before printing process output to the terminal.
+ *  Covers CSI (color, erase, cursor), OSC, and C1 two-byte escapes per ECMA-48. */
+const ANSI_RE = /\x1B(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1B\\)|[@-_])/g;
 const { ROOT, SCRIPTS, redact, run, runCapture, shellQuote } = require("./runner");
 const { stageOptimizedSandboxBuildContext } = require("./sandbox-build-context");
 const {
