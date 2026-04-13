@@ -22,6 +22,9 @@ function envInt(name, fallback) {
 
 /** Inference timeout (seconds) for local providers (Ollama, vLLM, NIM). */
 const LOCAL_INFERENCE_TIMEOUT_SECS = envInt("NEMOCLAW_LOCAL_INFERENCE_TIMEOUT", 180);
+
+/** Strip ANSI escape sequences before printing process output to the terminal. */
+const ANSI_RE = /\x1b\[[0-9;]*m/g;
 const { ROOT, SCRIPTS, redact, run, runCapture, shellQuote } = require("./runner");
 const { stageOptimizedSandboxBuildContext } = require("./sandbox-build-context");
 const {
@@ -2090,7 +2093,7 @@ async function startGatewayWithOptions(_gpu, { exitOnFailure = true } = {}) {
         if (startResult.status !== 0) {
           const lines = String(redact(startResult.output || ""))
             .split("\n")
-            .map((l) => compactText(l))
+            .map((l) => compactText(l.replace(ANSI_RE, "")))
             .filter(Boolean)
             .map((l) => `    ${l}`);
           if (lines.length > 0) {
@@ -2144,7 +2147,7 @@ async function startGatewayWithOptions(_gpu, { exitOnFailure = true } = {}) {
           console.error("  Gateway logs:");
           for (const line of String(logs)
             .split("\n")
-            .map((l) => l.replace(/\r/g, ""))
+            .map((l) => l.replace(/\r/g, "").replace(ANSI_RE, ""))
             .filter(Boolean)) {
             console.error(`    ${line}`);
           }
