@@ -658,8 +658,8 @@ function upsertProvider(name, type, credentialEnv, baseUrl, env = {}) {
   const updateResult = runOpenshell(updateArgs, runOpts);
   if (updateResult.status !== 0) {
     const output =
-      compactText(`${createResult.stderr || ""} ${updateResult.stderr || ""}`) ||
-      compactText(`${createResult.stdout || ""} ${updateResult.stdout || ""}`) ||
+      compactText(redact(`${createResult.stderr || ""} ${updateResult.stderr || ""}`)) ||
+      compactText(redact(`${createResult.stdout || ""} ${updateResult.stdout || ""}`)) ||
       `Failed to create or update provider '${name}'.`;
     return {
       ok: false,
@@ -3428,7 +3428,7 @@ async function setupInference(
         break;
       }
       const message =
-        compactText(`${applyResult.stderr || ""} ${applyResult.stdout || ""}`) ||
+        compactText(redact(`${applyResult.stderr || ""} ${applyResult.stdout || ""}`)) ||
         `Failed to configure inference provider '${provider}'.`;
       console.error(`  ${message}`);
       if (isNonInteractive()) {
