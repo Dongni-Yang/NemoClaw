@@ -830,6 +830,80 @@ describe("onboard helpers", () => {
     expect(getGatewayReuseState("", "")).toBe("missing");
   });
 
+  it("prints doctor logs automatically when gateway fails to start (#1605)", () => {
+    const repoRoot = path.join(import.meta.dirname, "..");
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-gateway-diag-"));
+    const fakeBin = path.join(tmpDir, "bin");
+    const scriptPath = path.join(tmpDir, "gateway-diag.cjs");
+    const onboardPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "onboard.js"));
+
+    fs.mkdirSync(fakeBin, { recursive: true });
+    // Fake openshell: returns diagnostic log output for `doctor logs`, fails otherwise.
+    fs.writeFileSync(
+      path.join(fakeBin, "openshell"),
+      `#!/usr/bin/env bash
+if [[ "$*" == *"doctor"*"logs"* ]]; then
+  printf "k3s cluster crashed: OOMKilled\\n  Container nemoclaw_k3s ran out of memory\\n"
+  exit 0
+fi
+exit 1
+`,
+      { mode: 0o755 },
+    );
+
+    // Script runs in a child process: patching p-retry to be immediate avoids the
+    // 10 s + 30 s minTimeout delays, and NEMOCLAW_HEALTH_POLL_COUNT=0 skips the
+    // health-poll loop so the function throws "Gateway failed to start" on the
+    // first attempt. With exitOnFailure:true the catch block should auto-print
+    // doctor logs to stderr and then call process.exit(1).
+    const script = `
+const mod = require("module");
+const origLoad = mod._load;
+mod._load = function(req, parent, isMain) {
+  if (req === "p-retry") {
+    return async (fn, opts) => {
+      try {
+        return await fn({ attemptNumber: 1, retriesLeft: 0 });
+      } catch (e) {
+        if (opts && opts.onFailedAttempt) {
+          opts.onFailedAttempt(Object.assign(e, { attemptNumber: 1, retriesLeft: 0 }));
+        }
+        throw e;
+      }
+    };
+  }
+  return origLoad.call(this, req, parent, isMain);
+};
+const { startGateway } = require(${onboardPath});
+startGateway(null).catch(() => {});
+`;
+    fs.writeFileSync(scriptPath, script);
+
+    const nodeExec = process.execPath;
+    const result = spawnSync(nodeExec, [scriptPath], {
+      cwd: repoRoot,
+      encoding: "utf-8",
+      env: {
+        ...process.env,
+        HOME: tmpDir,
+        PATH: `${fakeBin}:${process.env.PATH || ""}`,
+        NEMOCLAW_HEALTH_POLL_COUNT: "0",
+        NEMOCLAW_NON_INTERACTIVE: "1",
+      },
+    });
+
+    // The process exits 1 because startGateway calls process.exit(1) on failure.
+    assert.equal(result.status, 1, `unexpected exit code; stderr:\n${result.stderr}`);
+    assert.ok(
+      result.stderr.includes("Gateway logs:"),
+      `expected "Gateway logs:" header in stderr:\n${result.stderr}`,
+    );
+    assert.ok(
+      result.stderr.includes("OOMKilled"),
+      `expected doctor log output in stderr:\n${result.stderr}`,
+    );
+  });
+
   it("classifies sandbox reuse states from openshell outputs", () => {
     expect(
       getSandboxStateFromOutputs(

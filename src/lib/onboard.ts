@@ -2088,9 +2088,13 @@ async function startGatewayWithOptions(_gpu, { exitOnFailure = true } = {}) {
           },
         );
         if (startResult.status !== 0) {
-          const output = compactText(String(startResult.output || ""));
-          if (output) {
-            console.log(`  Gateway start returned before healthy: ${output.slice(0, 240)}`);
+          const lines = String(startResult.output || "")
+            .split("\n")
+            .map((l) => compactText(l))
+            .filter(Boolean)
+            .map((l) => `    ${l}`);
+          if (lines.length > 0) {
+            console.log(`  Gateway start returned before healthy:\n${lines.join("\n")}`);
           }
         }
         console.log("  Waiting for gateway health...");
@@ -2130,6 +2134,20 @@ async function startGatewayWithOptions(_gpu, { exitOnFailure = true } = {}) {
       console.error(`  Gateway failed to start after ${retries + 1} attempts.`);
       console.error("  Gateway state preserved for diagnostics.");
       console.error("");
+      try {
+        const logs = runCaptureOpenshell(["doctor", "logs", "--name", GATEWAY_NAME], {
+          ignoreError: true,
+        });
+        if (logs) {
+          console.error("  Gateway logs:");
+          for (const line of String(logs).split("\n").filter(Boolean)) {
+            console.error(`    ${line}`);
+          }
+          console.error("");
+        }
+      } catch {
+        // doctor logs unavailable — fall through to manual instructions
+      }
       console.error("  Troubleshooting:");
       console.error("    openshell doctor logs --name nemoclaw");
       console.error("    openshell doctor check");
@@ -4794,6 +4812,7 @@ module.exports = {
   repairRecordedSandbox,
   recoverGatewayRuntime,
   resolveDashboardForwardTarget,
+  startGateway,
   startGatewayForRecovery,
   runCaptureOpenshell,
   setupInference,
