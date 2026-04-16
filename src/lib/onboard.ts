@@ -2787,6 +2787,13 @@ async function createSandbox(
   // subprocesses (gateway start, openshell CLI) but the sandbox should
   // never have access to the host's Kubernetes cluster or SSH agent.
   const envArgs = [formatEnvAssignment("CHAT_UI_URL", chatUiUrl)];
+  // Pass the configured dashboard port into the sandbox so nemoclaw-start.sh
+  // can unconditionally override CHAT_UI_URL even when the Docker image was
+  // built with a different default. Without this, the baked-in Docker ENV
+  // value takes precedence and the gateway starts on the wrong port. (#1925)
+  if (process.env.NEMOCLAW_DASHBOARD_PORT) {
+    envArgs.push(formatEnvAssignment("NEMOCLAW_DASHBOARD_PORT", String(DASHBOARD_PORT)));
+  }
   if (webSearchConfig?.fetchEnabled) {
     const braveKey =
       getCredential(webSearch.BRAVE_API_KEY_ENV) || process.env[webSearch.BRAVE_API_KEY_ENV];

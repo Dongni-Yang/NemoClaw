@@ -172,7 +172,16 @@ else
     exit 1
   fi
 fi
-CHAT_UI_URL="${CHAT_UI_URL:-http://127.0.0.1:${_DASHBOARD_PORT}}"
+# When NEMOCLAW_DASHBOARD_PORT is explicitly set (injected at sandbox create time
+# via envArgs in onboard.ts), unconditionally override CHAT_UI_URL so the gateway
+# starts on the configured port even if the Docker image has a different value
+# baked in. Without this, the Docker ENV takes precedence and the gateway listens
+# on the wrong port while the SSH tunnel forwards the custom port. (#1925)
+if [ -n "${NEMOCLAW_DASHBOARD_PORT:-}" ]; then
+  CHAT_UI_URL="http://127.0.0.1:${_DASHBOARD_PORT}"
+else
+  CHAT_UI_URL="${CHAT_UI_URL:-http://127.0.0.1:${_DASHBOARD_PORT}}"
+fi
 PUBLIC_PORT="$_DASHBOARD_PORT"
 OPENCLAW="$(command -v openclaw)" # Resolve once, use absolute path everywhere
 _SANDBOX_HOME="/sandbox"          # Home dir for the sandbox user (useradd -d /sandbox in Dockerfile.base)

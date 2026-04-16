@@ -412,7 +412,38 @@ describe("onboard helpers", () => {
     expect(command).toContain("forward");
     expect(command).toContain("start");
     expect(command).toContain("--background");
+    // On WSL, bind to all interfaces so the Windows-side browser can reach the port.
+    // The sandbox image is built with CHAT_UI_URL=http://127.0.0.1:19999, so the
+    // gateway listens on 19999 inside the sandbox — openshell maps host:19999 →
+    // sandbox:19999 (same port both sides, the only mapping openshell supports).
     expect(command).toContain("0.0.0.0:19999");
+    expect(command).toContain("the-crucible");
+  });
+
+  it("uses the default port as-is when NEMOCLAW_DASHBOARD_PORT is not overridden", () => {
+    const command = getDashboardForwardStartCommand("the-crucible", {
+      chatUiUrl: "http://127.0.0.1:18789",
+      openshellBinary: "/usr/bin/openshell",
+    });
+
+    expect(command).toContain("--background");
+    // Default port — forward same port on both sides.
+    expect(command).toContain("18789");
+    expect(command).not.toContain("18789:18789");
+    expect(command).toContain("the-crucible");
+  });
+
+  it("forwards a custom port as-is on non-WSL loopback", () => {
+    const command = getDashboardForwardStartCommand("the-crucible", {
+      chatUiUrl: "http://127.0.0.1:19000",
+      openshellBinary: "/usr/bin/openshell",
+    });
+
+    expect(command).toContain("--background");
+    // The gateway is configured to listen on the same port (via CHAT_UI_URL baked at
+    // onboard time), so host:19000 → sandbox:19000 is the correct mapping.
+    expect(command).toContain("19000");
+    expect(command).not.toContain("19000:18789");
     expect(command).toContain("the-crucible");
   });
 
