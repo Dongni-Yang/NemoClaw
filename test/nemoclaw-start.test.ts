@@ -14,7 +14,7 @@ describe("nemoclaw-start non-root fallback", () => {
 
     expect(src).toMatch(/if \[ "\$\(id -u\)" -ne 0 \]; then/);
     expect(src).toMatch(/touch \/tmp\/gateway\.log/);
-    expect(src).toMatch(/nohup "\$OPENCLAW" gateway run >\/tmp\/gateway\.log 2>&1 &/);
+    expect(src).toMatch(/nohup "\$OPENCLAW" gateway run --port "\$\{_DASHBOARD_PORT\}" >\/tmp\/gateway\.log 2>&1 &/);
   });
 
   it("exits on config integrity failure in non-root mode", () => {
@@ -530,6 +530,17 @@ describe("nemoclaw-start CHAT_UI_URL override for configurable dashboard port (#
     expect(ifElseBlock).toBeTruthy();
     expect(ifElseBlock[1]).toContain(
       'CHAT_UI_URL="${CHAT_UI_URL:-http://127.0.0.1:${_DASHBOARD_PORT}}"',
+    );
+  });
+
+  it("passes --port to openclaw gateway run in root path (gosu gateway) (#1925)", () => {
+    // The root path (run as root, then gosu'd to the gateway user) must also
+    // pass --port so the gateway binds to the configured port. Without this,
+    // a user with NEMOCLAW_DASHBOARD_PORT set would get a gateway on 18789
+    // even though the SSH tunnel forwards the custom port.
+    const rootBlock = src.split(/# ── Root path/)[1] || "";
+    expect(rootBlock).toMatch(
+      /nohup gosu gateway "\$OPENCLAW" gateway run --port "\$\{_DASHBOARD_PORT\}" >\/tmp\/gateway\.log 2>&1 &/,
     );
   });
 });

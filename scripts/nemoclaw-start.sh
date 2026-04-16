@@ -901,7 +901,7 @@ if [ "$(id -u)" -ne 0 ]; then
   chmod 600 /tmp/auto-pair.log
 
   # Start gateway in background, auto-pair, then wait
-  nohup "$OPENCLAW" gateway run >/tmp/gateway.log 2>&1 &
+  nohup "$OPENCLAW" gateway run --port "${_DASHBOARD_PORT}" >/tmp/gateway.log 2>&1 &
   GATEWAY_PID=$!
   echo "[gateway] openclaw gateway launched (pid $GATEWAY_PID)" >&2
   trap cleanup SIGTERM SIGINT
