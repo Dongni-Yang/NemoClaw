@@ -429,8 +429,10 @@ describe("onboard helpers", () => {
     });
 
     expect(command).toContain("--background");
-    // Default port — forward same port on both sides.
+    // Default port — forward same port on both sides using the bare port number.
+    // Must not regress to all-interfaces (0.0.0.0:18789) or port:port (18789:18789) forms.
     expect(command).toContain("18789");
+    expect(command).not.toContain("0.0.0.0:18789");
     expect(command).not.toContain("18789:18789");
     expect(command).toContain("the-crucible");
   });
