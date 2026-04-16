@@ -502,3 +502,34 @@ describe("nemoclaw-start signal handling", () => {
     expect(src).toMatch(/AUTO_PAIR_PID=\$!/);
   });
 });
+
+describe("nemoclaw-start CHAT_UI_URL override for configurable dashboard port (#1925)", () => {
+  const src = fs.readFileSync(START_SCRIPT, "utf-8");
+
+  it("unconditionally sets CHAT_UI_URL when NEMOCLAW_DASHBOARD_PORT is injected", () => {
+    // When the var is present (injected via envArgs in onboard.ts), the gateway
+    // must use the configured port even if the Docker image has a different
+    // CHAT_UI_URL baked in as a Docker ENV directive.
+    const overrideBlock = src.match(
+      /if \[ -n "\$\{NEMOCLAW_DASHBOARD_PORT:-\}" \]; then([\s\S]*?)else/,
+    );
+    expect(overrideBlock).toBeTruthy();
+    // Plain assignment — the Docker ENV value cannot take precedence
+    expect(overrideBlock[1]).toContain('CHAT_UI_URL="http://127.0.0.1:${_DASHBOARD_PORT}"');
+    // Must NOT use :- in this branch — that would let the baked-in Docker ENV win
+    // and restart the gateway on the wrong port (#1925)
+    expect(overrideBlock[1]).not.toMatch(/CHAT_UI_URL=.*:-/);
+  });
+
+  it("falls back to baked-in CHAT_UI_URL when NEMOCLAW_DASHBOARD_PORT is absent", () => {
+    // When no port override was injected (default install), honour whatever
+    // CHAT_UI_URL was baked into the Docker image at onboard time.
+    const ifElseBlock = src.match(
+      /if \[ -n "\$\{NEMOCLAW_DASHBOARD_PORT:-\}" \]; then[\s\S]*?else([\s\S]*?)fi/,
+    );
+    expect(ifElseBlock).toBeTruthy();
+    expect(ifElseBlock[1]).toContain(
+      'CHAT_UI_URL="${CHAT_UI_URL:-http://127.0.0.1:${_DASHBOARD_PORT}}"',
+    );
+  });
+});
