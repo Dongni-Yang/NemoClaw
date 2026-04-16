@@ -171,7 +171,7 @@ $ NEMOCLAW_DASHBOARD_PORT=19000 nemoclaw onboard  # second sandbox — uses 1900
 
 Each sandbox then has its own SSH tunnel and its own dashboard URL:
 
-```
+```text
 http://localhost:18789   ← first sandbox
 http://localhost:19000   ← second sandbox
 ```
