@@ -444,7 +444,11 @@ describe("onboard helpers", () => {
     expect(command).toContain("--background");
     // The gateway is configured to listen on the same port (via CHAT_UI_URL baked at
     // onboard time), so host:19000 → sandbox:19000 is the correct mapping.
+    // Non-WSL loopback must use the plain port — not the all-interfaces (0.0.0.0:19000)
+    // form and not any port:port variant (openshell does not support asymmetric mapping).
     expect(command).toContain("19000");
+    expect(command).not.toContain("0.0.0.0:19000");
+    expect(command).not.toContain("19000:19000");
     expect(command).not.toContain("19000:18789");
     expect(command).toContain("the-crucible");
   });
@@ -2532,6 +2536,10 @@ const { createSandbox } = require(${onboardPath});
     assert.ok(
       !payload.commands.some((entry) => entry.command.includes("19000:18789")),
       "forward must not use asymmetric 19000:18789 mapping",
+    );
+    assert.ok(
+      !payload.commands.some((entry) => entry.command.includes("19000:19000")),
+      "forward must not use port:port form (openshell does not support it)",
     );
   });
 
