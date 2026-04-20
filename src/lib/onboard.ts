@@ -2869,7 +2869,7 @@ async function createSandbox(
   console.log("  Waiting for NemoClaw dashboard to become ready...");
   for (let i = 0; i < 15; i++) {
     const readyMatch = runCapture(
-      `openshell sandbox exec ${shellQuote(sandboxName)} curl -sf http://localhost:${DASHBOARD_PORT}/ 2>/dev/null || echo "no"`,
+      `openshell sandbox exec ${shellQuote(sandboxName)} curl -sf http://localhost:${effectivePort}/ 2>/dev/null || echo "no"`,
       { ignoreError: true },
     );
     if (readyMatch && !readyMatch.includes("no")) {
@@ -4730,6 +4730,17 @@ const { resolveDashboardForwardTarget, buildControlUiUrls } = dashboard;
 function ensureDashboardForward(sandboxName, chatUiUrl = `http://127.0.0.1:${CONTROL_UI_PORT}`) {
   const portToStop = getDashboardForwardPort(chatUiUrl);
   const forwardTarget = getDashboardForwardTarget(chatUiUrl);
+  // Detect port already claimed by a different sandbox and fail fast with an
+  // actionable message rather than silently stealing that sandbox's forward.
+  // (Same sandbox is always allowed — covers reconnect and resume paths.)
+  const existingForwards = runCaptureOpenshell(["forward", "list"], { ignoreError: true });
+  if (existingForwards?.includes(`:${portToStop}`) && !existingForwards?.includes(sandboxName)) {
+    throw new Error(
+      `Port ${portToStop} is already forwarded for another sandbox. ` +
+        `Set NEMOCLAW_DASHBOARD_PORT to a different port before onboarding ` +
+        `a second sandbox.`,
+    );
+  }
   runOpenshell(["forward", "stop", portToStop], { ignoreError: true });
   // Use stdio "ignore" to prevent spawnSync from waiting on inherited pipe fds.
   // The --background flag forks a child that inherits stdout/stderr; if those are
