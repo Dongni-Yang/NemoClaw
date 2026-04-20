@@ -5563,15 +5563,16 @@ function ensureDashboardForward(sandboxName, chatUiUrl = `http://127.0.0.1:${CON
   // (Same sandbox is always allowed — covers reconnect and resume paths.)
   const existingForwards = runCaptureOpenshell(["forward", "list"], { ignoreError: true });
   // Parse line-by-line to avoid false positives from substring matches.
-  // Each line has the format: "<local-port> -> <sandbox-name>:<remote-port>"
+  // openshell forward list columns: SANDBOX  BIND  PORT  PID  STATUS
+  // Port is at column index 2; sandbox name is at column index 0.
   const portLine = existingForwards
     ?.split("\n")
     .map((l) => l.trim())
     .find((l) => {
-      const localPort = l.split(/\s+/)[0];
-      return localPort === portToStop;
+      const parts = l.split(/\s+/);
+      return parts[2] === portToStop;
     });
-  const portOwner = portLine ? (portLine.split(/\s+/)[2]?.split(":")?.[0] ?? null) : null;
+  const portOwner = portLine ? (portLine.split(/\s+/)[0] ?? null) : null;
   if (portOwner !== null && portOwner !== sandboxName) {
     throw new Error(
       `Port ${portToStop} is already forwarded for sandbox '${portOwner}'. ` +
