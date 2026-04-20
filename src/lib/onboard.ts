@@ -5562,11 +5562,21 @@ function ensureDashboardForward(sandboxName, chatUiUrl = `http://127.0.0.1:${CON
   // actionable message rather than silently stealing that sandbox's forward.
   // (Same sandbox is always allowed — covers reconnect and resume paths.)
   const existingForwards = runCaptureOpenshell(["forward", "list"], { ignoreError: true });
-  if (existingForwards?.includes(`:${portToStop}`) && !existingForwards?.includes(sandboxName)) {
+  // Parse line-by-line to avoid false positives from substring matches.
+  // Each line has the format: "<local-port> -> <sandbox-name>:<remote-port>"
+  const portLine = existingForwards
+    ?.split("\n")
+    .map((l) => l.trim())
+    .find((l) => {
+      const localPort = l.split(/\s+/)[0];
+      return localPort === portToStop;
+    });
+  const portOwner = portLine ? (portLine.split(/\s+/)[2]?.split(":")?.[0] ?? null) : null;
+  if (portOwner !== null && portOwner !== sandboxName) {
     throw new Error(
-      `Port ${portToStop} is already forwarded for another sandbox. ` +
-        `Set NEMOCLAW_DASHBOARD_PORT to a different port before onboarding ` +
-        `a second sandbox.`,
+      `Port ${portToStop} is already forwarded for sandbox '${portOwner}'. ` +
+        `Set CHAT_UI_URL to a different local port (e.g. http://127.0.0.1:18790) ` +
+        `before onboarding a second sandbox.`,
     );
   }
   runOpenshell(["forward", "stop", portToStop], { ignoreError: true });

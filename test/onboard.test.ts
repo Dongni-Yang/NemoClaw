@@ -3293,7 +3293,7 @@ runner.runCapture = (command) => {
   if (command.includes("'sandbox' 'get' 'my-assistant'")) return "my-assistant";
   if (command.includes("'sandbox' 'list'")) return "my-assistant Ready";
   if (command.includes("'forward' 'list'")) return "";
-  if (command.includes("sandbox exec") && command.includes("curl")) return "ok";
+  if (command.includes("'sandbox' 'exec'") && command.includes("curl")) return "ok";
   return "";
 };
 
