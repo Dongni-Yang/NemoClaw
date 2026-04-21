@@ -2293,8 +2293,9 @@ function getGatewayLocalEndpoint() {
 
 function getGatewayBootstrapRepairPlan(missingSecrets = []) {
   const allowed = new Set(GATEWAY_BOOTSTRAP_SECRET_NAMES);
-  const normalized = [...new Set((missingSecrets || []).map((name) => String(name).trim()).filter(Boolean))]
-    .filter((name) => allowed.has(name));
+  const normalized = [
+    ...new Set((missingSecrets || []).map((name) => String(name).trim()).filter(Boolean)),
+  ].filter((name) => allowed.has(name));
   const missing = new Set(normalized);
   const needsClientBundle =
     missing.has("openshell-server-client-ca") || missing.has("openshell-client-tls");
@@ -2349,18 +2350,12 @@ fi
 
 function runGatewayClusterCapture(script, opts = {}) {
   const containerName = getGatewayClusterContainerName();
-  return runCapture(
-    `docker exec ${shellQuote(containerName)} sh -lc ${shellQuote(script)}`,
-    opts,
-  );
+  return runCapture(`docker exec ${shellQuote(containerName)} sh -lc ${shellQuote(script)}`, opts);
 }
 
 function runGatewayCluster(script, opts = {}) {
   const containerName = getGatewayClusterContainerName();
-  return run(
-    `docker exec ${shellQuote(containerName)} sh -lc ${shellQuote(script)}`,
-    opts,
-  );
+  return run(`docker exec ${shellQuote(containerName)} sh -lc ${shellQuote(script)}`, opts);
 }
 
 function listMissingGatewayBootstrapSecrets() {
@@ -2411,7 +2406,9 @@ function repairGatewayBootstrapSecrets() {
 }
 
 function attachGatewayMetadataIfNeeded({ forceRefresh = false } = {}) {
-  const gwInfo = runCaptureOpenshell(["gateway", "info", "-g", GATEWAY_NAME], { ignoreError: true });
+  const gwInfo = runCaptureOpenshell(["gateway", "info", "-g", GATEWAY_NAME], {
+    ignoreError: true,
+  });
   // runCaptureOpenshell may return stale-but-present gateway metadata. When
   // hasStaleGateway(gwInfo) is truthy we skip runOpenshell unless a repair
   // flow explicitly forces a refresh after recreating bootstrap secrets.
@@ -4949,6 +4946,27 @@ async function setupMessagingChannels() {
         console.log(`  Skipped ${ch.name} (no token entered)`);
         enabled.delete(ch.name);
         continue;
+      }
+    }
+    if (ch.appTokenEnvKey) {
+      const existingAppToken = getMessagingToken(ch.appTokenEnvKey);
+      if (existingAppToken) {
+        console.log(`  ✓ ${ch.name} app token — already configured`);
+      } else {
+        console.log("");
+        console.log(`  ${ch.appTokenHelp}`);
+        const appToken = normalizeCredentialValue(
+          await prompt(`  ${ch.appTokenLabel}: `, { secret: true }),
+        );
+        if (appToken) {
+          saveCredential(ch.appTokenEnvKey, appToken);
+          process.env[ch.appTokenEnvKey] = appToken;
+          console.log(`  ✓ ${ch.name} app token saved`);
+        } else {
+          console.log(`  Skipped ${ch.name} app token (Socket Mode requires both tokens)`);
+          enabled.delete(ch.name);
+          continue;
+        }
       }
     }
     if (ch.serverIdEnvKey) {
