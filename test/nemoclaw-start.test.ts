@@ -423,7 +423,7 @@ describe("runtime CORS origin override (#719)", () => {
     );
 
     const rootBlock = src.match(
-      /# ── Root path[\s\S]*?apply_model_override\n\s*apply_cors_override\n\s*export_gateway_token/,
+      /# ── Root path[\s\S]*?apply_model_override\n\s*apply_cors_override\n\s*apply_slack_token_override\n\s*export_gateway_token/,
     );
     expect(rootBlock).toBeTruthy();
   });
@@ -465,6 +465,90 @@ describe("runtime CORS origin override (#719)", () => {
     const fn = src.match(/apply_cors_override\(\) \{([\s\S]*?)^}/m);
     expect(fn).toBeTruthy();
     expect(fn[1]).toContain("control characters");
+  });
+});
+
+describe("Slack token placeholder resolution (#2085)", () => {
+  const src = fs.readFileSync(START_SCRIPT, "utf-8");
+
+  it("defines apply_slack_token_override function", () => {
+    expect(src).toContain("apply_slack_token_override()");
+    expect(src).toContain("SLACK_BOT_TOKEN");
+    expect(src).toContain("SLACK_APP_TOKEN");
+  });
+
+  it("calls apply_slack_token_override after apply_cors_override in both paths", () => {
+    const nonRootBlock = src.match(/if \[ "\$\(id -u\)" -ne 0 \]; then([\s\S]*?)# ── Root path/);
+    expect(nonRootBlock).toBeTruthy();
+    expect(nonRootBlock[1]).toMatch(
+      /apply_cors_override[\s\S]*?apply_slack_token_override[\s\S]*?export_gateway_token/,
+    );
+
+    const rootBlock = src.match(
+      /# ── Root path[\s\S]*?apply_cors_override\n\s*apply_slack_token_override\n\s*export_gateway_token/,
+    );
+    expect(rootBlock).toBeTruthy();
+  });
+
+  it("is a no-op when SLACK_BOT_TOKEN is not set", () => {
+    const fn = src.match(/apply_slack_token_override\(\) \{([\s\S]*?)^}/m);
+    expect(fn).toBeTruthy();
+    expect(fn[1]).toMatch(/\[ -n "\$\{SLACK_BOT_TOKEN:-\}" \] \|\| return 0/);
+  });
+
+  it("only applies override in root mode", () => {
+    const fn = src.match(/apply_slack_token_override\(\) \{([\s\S]*?)^}/m);
+    expect(fn).toBeTruthy();
+    expect(fn[1]).toMatch(/id -u.*-ne 0/);
+    expect(fn[1]).toContain("requires root");
+  });
+
+  it("guards against symlink attacks", () => {
+    const fn = src.match(/apply_slack_token_override\(\) \{([\s\S]*?)^}/m);
+    expect(fn).toBeTruthy();
+    expect(fn[1]).toContain('-L "$config_file"');
+    expect(fn[1]).toContain("Refusing Slack token override");
+  });
+
+  it("validates botToken prefix is xoxb-", () => {
+    const fn = src.match(/apply_slack_token_override\(\) \{([\s\S]*?)^}/m);
+    expect(fn).toBeTruthy();
+    expect(fn[1]).toContain("xoxb-");
+    expect(fn[1]).toContain("does not start with xoxb-");
+  });
+
+  it("validates appToken prefix is xapp-", () => {
+    const fn = src.match(/apply_slack_token_override\(\) \{([\s\S]*?)^}/m);
+    expect(fn).toBeTruthy();
+    expect(fn[1]).toContain("xapp-");
+    expect(fn[1]).toContain("does not start with xapp-");
+  });
+
+  it("recomputes config hash after override", () => {
+    const fn = src.match(/apply_slack_token_override\(\) \{([\s\S]*?)^}/m);
+    expect(fn).toBeTruthy();
+    expect(fn[1]).toContain("sha256sum openclaw.json");
+    expect(fn[1]).toContain("config-hash");
+  });
+
+  it("resolves openshell:resolve:env: placeholders via Python", () => {
+    const fn = src.match(/apply_slack_token_override\(\) \{([\s\S]*?)^}/m);
+    expect(fn).toBeTruthy();
+    expect(fn[1]).toContain("openshell:resolve:env:");
+    expect(fn[1]).toContain("botToken");
+    expect(fn[1]).toContain("appToken");
+  });
+
+  it("unsets SLACK_BOT_TOKEN and SLACK_APP_TOKEN before gateway starts in root path", () => {
+    const gatewayLaunch = src.match(/harden_openclaw_symlinks([\s\S]*?)nohup gosu gateway/);
+    expect(gatewayLaunch).toBeTruthy();
+    expect(gatewayLaunch[1]).toContain("unset SLACK_BOT_TOKEN SLACK_APP_TOKEN");
+  });
+
+  it("passes tokens via env prefix, not as positional args", () => {
+    const fn = src.match(/apply_slack_token_override\(\) \{([\s\S]*?)^}/m);
+    expect(fn).toBeTruthy();
+    expect(fn[1]).toMatch(/SLACK_BOT_TOKEN="\$SLACK_BOT_TOKEN" \\/);
   });
 });
 

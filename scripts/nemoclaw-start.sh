@@ -401,6 +401,78 @@ PYCORS
   printf '[config] Config hash recomputed after CORS override\n' >&2
 }
 
+# ── Slack token placeholder resolution ────────────────────────────
+# Resolves openshell:resolve:env:SLACK_* placeholders in openclaw.json at
+# container startup, before chattr +i locks the file. This ensures Bolt's
+# in-process token validation (appToken must start with xapp-) succeeds even
+# before the L7 proxy can intercept HTTP calls.
+# Same trust model as apply_model_override: host-set env vars, root-only,
+# applied before Landlock/chattr +i, hash recomputed. Tokens are unset from
+# the process env after patching so they are not visible inside the sandbox.
+# Ref: https://github.com/NVIDIA/NemoClaw/issues/2085
+
+apply_slack_token_override() {
+  [ -n "${SLACK_BOT_TOKEN:-}" ] || return 0
+
+  # SECURITY: Only root can write to /sandbox/.openclaw (root:root 444).
+  if [ "$(id -u)" -ne 0 ]; then
+    printf '[SECURITY] Slack token override ignored — requires root (non-root mode cannot write to config)\n' >&2
+    return 0
+  fi
+
+  local config_file="/sandbox/.openclaw/openclaw.json"
+  local hash_file="/sandbox/.openclaw/.config-hash"
+
+  # SECURITY: Refuse to write through symlinks to prevent symlink-following attacks.
+  if [ -L "$config_file" ] || [ -L "$hash_file" ]; then
+    printf '[SECURITY] Refusing Slack token override — config or hash path is a symlink\n' >&2
+    return 1
+  fi
+
+  # SECURITY: Validate token prefixes — reject anything that doesn't look like a real Slack token.
+  case "${SLACK_BOT_TOKEN}" in
+    xoxb-*) ;;
+    *) printf '[channels] SLACK_BOT_TOKEN does not start with xoxb- — skipping Slack placeholder resolution\n' >&2; return 0 ;;
+  esac
+
+  if [ -n "${SLACK_APP_TOKEN:-}" ]; then
+    case "$SLACK_APP_TOKEN" in
+      xapp-*) ;;
+      *) printf '[channels] SLACK_APP_TOKEN does not start with xapp- — skipping Slack placeholder resolution\n' >&2; return 0 ;;
+    esac
+  fi
+
+  printf '[channels] Resolving Slack token placeholders in openclaw.json\n' >&2
+
+  SLACK_BOT_TOKEN="$SLACK_BOT_TOKEN" \
+  SLACK_APP_TOKEN="${SLACK_APP_TOKEN:-}" \
+  python3 - "$config_file" <<'PYSLACK'
+import json, os, sys
+
+config_file = sys.argv[1]
+bot_token = os.environ["SLACK_BOT_TOKEN"]
+app_token = os.environ.get("SLACK_APP_TOKEN", "")
+placeholder_prefix = "openshell:resolve:env:"
+
+with open(config_file) as f:
+    cfg = json.load(f)
+
+slack = cfg.get("channels", {}).get("slack", {})
+default_acct = slack.get("accounts", {}).get("default", {})
+
+if default_acct.get("botToken", "").startswith(placeholder_prefix):
+    default_acct["botToken"] = bot_token
+if app_token and default_acct.get("appToken", "").startswith(placeholder_prefix):
+    default_acct["appToken"] = app_token
+
+with open(config_file, "w") as f:
+    json.dump(cfg, f, indent=2)
+PYSLACK
+
+  (cd /sandbox/.openclaw && sha256sum openclaw.json >"$hash_file")
+  printf '[channels] Config hash recomputed after Slack token override\n' >&2
+}
+
 _read_gateway_token() {
   python3 - <<'PYTOKEN'
 import json
@@ -635,14 +707,16 @@ harden_auth_profiles() {
 
 configure_messaging_channels() {
   # Channel entries are baked into openclaw.json at image build time via
-  # NEMOCLAW_MESSAGING_CHANNELS_B64 (see Dockerfile). Placeholder tokens
-  # (openshell:resolve:env:*) flow through to API calls where the L7 proxy
-  # rewrites them with real secrets at egress. Real tokens are never visible
-  # inside the sandbox.
+  # NEMOCLAW_MESSAGING_CHANNELS_B64 (see Dockerfile).
   #
-  # Runtime patching of /sandbox/.openclaw/openclaw.json is not possible:
-  # Landlock enforces read-only on /sandbox/.openclaw/ at the kernel level,
-  # regardless of DAC (file ownership/chmod). Writes fail with EPERM.
+  # Telegram/Discord: placeholder tokens (openshell:resolve:env:*) flow through
+  # to API calls where the L7 proxy rewrites them with real secrets at egress.
+  # Real tokens are never visible inside the sandbox for these channels.
+  #
+  # Slack: apply_slack_token_override (runs before this function) resolves
+  # SLACK_BOT_TOKEN/SLACK_APP_TOKEN placeholders directly into openclaw.json so
+  # Bolt's in-process token validation passes. Both env vars are unset before the
+  # gateway starts (root path) so they do not leak into the sandbox process env.
   [ -n "${TELEGRAM_BOT_TOKEN:-}" ] || [ -n "${DISCORD_BOT_TOKEN:-}" ] || [ -n "${SLACK_BOT_TOKEN:-}" ] || return 0
 
   echo "[channels] Messaging channels active (baked at build time):" >&2
@@ -858,6 +932,7 @@ if [ "$(id -u)" -ne 0 ]; then
   fi
   apply_model_override
   apply_cors_override
+  apply_slack_token_override
   export_gateway_token
   install_configure_guard
   configure_messaging_channels
@@ -957,6 +1032,7 @@ fi
 verify_config_integrity
 apply_model_override
 apply_cors_override
+apply_slack_token_override
 export_gateway_token
 install_configure_guard
 
@@ -994,6 +1070,10 @@ validate_openclaw_symlinks
 # as root; the sandbox user cannot remove the flag.
 # Ref: https://github.com/NVIDIA/NemoClaw/issues/1019
 harden_openclaw_symlinks
+
+# SECURITY: Slack tokens were resolved into openclaw.json by apply_slack_token_override.
+# Clear them from the process env so neither the gateway nor the sandbox user inherits them.
+unset SLACK_BOT_TOKEN SLACK_APP_TOKEN
 
 # Start the gateway as the 'gateway' user.
 # SECURITY: The sandbox user cannot kill this process because it runs
