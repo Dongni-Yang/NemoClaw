@@ -323,7 +323,8 @@ describe("runtime model override (#759)", () => {
     // Guard checks all override env vars before returning early
     expect(fn[1]).toContain("NEMOCLAW_MODEL_OVERRIDE");
     expect(fn[1]).toContain("NEMOCLAW_REASONING");
-    expect(fn[1]).toContain("return 0");
+    // shfmt may format `|| return 0` as a standalone `return 0` on its own line
+    expect(fn[1]).toMatch(/\|\|\s*return 0|^\s*return 0/m);
   });
 
   it("supports optional NEMOCLAW_INFERENCE_API_OVERRIDE for cross-provider switches", () => {
@@ -535,6 +536,13 @@ describe("Slack token placeholder resolution (#2085)", () => {
     expect(fn).toBeTruthy();
     expect(fn[1]).toContain("xapp-");
     expect(fn[1]).toContain("does not start with xapp-");
+  });
+
+  it("warns when SLACK_BOT_TOKEN is set but SLACK_APP_TOKEN is missing", () => {
+    const fn = src.match(/apply_slack_token_override\(\) \{([\s\S]*?)^}/m);
+    expect(fn).toBeTruthy();
+    expect(fn[1]).toContain("SLACK_APP_TOKEN is missing");
+    expect(fn[1]).toContain("Socket Mode requires both tokens");
   });
 
   it("recomputes config hash after override", () => {
