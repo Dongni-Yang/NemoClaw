@@ -408,6 +408,16 @@ describe("runtime model override (#759)", () => {
     expect(guard).toContain("NEMOCLAW_MAX_TOKENS");
     expect(guard).toContain("NEMOCLAW_REASONING");
   });
+
+  it("accesses NEMOCLAW_MODEL_OVERRIDE with :- fallback to avoid unbound variable under set -u", () => {
+    // NEMOCLAW_CONTEXT_WINDOW/MAX_TOKENS/REASONING are baked into the image ENV and are always
+    // non-empty, so the guard fires even when the operator never passes NEMOCLAW_MODEL_OVERRIDE.
+    // Without the :- fallback, set -euo pipefail would abort the entrypoint on every container
+    // start where only a context-window or reasoning override was intended.
+    const fn = src.match(/apply_model_override\(\) \{([\s\S]*?)^}/m);
+    expect(fn).toBeTruthy();
+    expect(fn[1]).toContain('${NEMOCLAW_MODEL_OVERRIDE:-}');
+  });
 });
 
 describe("runtime CORS origin override (#719)", () => {
