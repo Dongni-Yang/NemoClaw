@@ -2724,6 +2724,7 @@ const { createSandbox } = require(${onboardPath});
   process.env.OPENSHELL_GATEWAY = "nemoclaw";
   process.env.DISCORD_BOT_TOKEN = "test-discord-token-value";
   process.env.SLACK_BOT_TOKEN = "xoxb-test-slack-token-value";
+  process.env.SLACK_APP_TOKEN = "xapp-test-slack-app-token-value";
   process.env.TELEGRAM_BOT_TOKEN = "123456:ABC-test-telegram-token";
   const sandboxName = await createSandbox(null, "gpt-5.4");
   console.log(JSON.stringify({ sandboxName, commands }));
@@ -2784,10 +2785,14 @@ const { createSandbox } = require(${onboardPath});
       assert.match(createCommand.command, /--provider my-assistant-slack-bridge/);
       assert.match(createCommand.command, /--provider my-assistant-telegram-bridge/);
 
-      // Verify real token values are NOT in the sandbox create command
+      // Discord and Telegram tokens must NOT appear in the sandbox create command
+      // (they flow exclusively through the openshell provider credential system).
       assert.doesNotMatch(createCommand.command, /test-discord-token-value/);
-      assert.doesNotMatch(createCommand.command, /xoxb-test-slack-token-value/);
       assert.doesNotMatch(createCommand.command, /123456:ABC-test-telegram-token/);
+      // Slack tokens ARE injected as --env args so the baked openclaw.json
+      // openshell:resolve:env: placeholders resolve inside the container.
+      assert.match(createCommand.command, /SLACK_BOT_TOKEN=xoxb-test-slack-token-value/);
+      assert.match(createCommand.command, /SLACK_APP_TOKEN=xapp-test-slack-app-token-value/);
 
       // Verify blocked credentials are NOT in the sandbox spawn environment
       assert.ok(createCommand.env, "expected env to be captured from spawn call");
@@ -2800,6 +2805,11 @@ const { createSandbox } = require(${onboardPath});
         createCommand.env.SLACK_BOT_TOKEN,
         undefined,
         "SLACK_BOT_TOKEN must not be in sandbox env",
+      );
+      assert.equal(
+        createCommand.env.SLACK_APP_TOKEN,
+        undefined,
+        "SLACK_APP_TOKEN must not be in sandbox env",
       );
       assert.equal(
         createCommand.env.TELEGRAM_BOT_TOKEN,
@@ -2820,7 +2830,11 @@ const { createSandbox } = require(${onboardPath});
       );
       assert.ok(
         !envString.includes("xoxb-test-slack-token-value"),
-        "Slack token value must not leak into sandbox env",
+        "Slack bot token value must not leak into sandbox spawn env",
+      );
+      assert.ok(
+        !envString.includes("xapp-test-slack-app-token-value"),
+        "Slack app token value must not leak into sandbox spawn env",
       );
       assert.ok(
         !envString.includes("123456:ABC-test-telegram-token"),

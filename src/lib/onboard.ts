@@ -3428,6 +3428,16 @@ async function createSandbox(
       envArgs.push(formatEnvAssignment(webSearch.BRAVE_API_KEY_ENV, braveKey));
     }
   }
+  // Slack Socket Mode requires both tokens in the container env so the baked
+  // openshell:resolve:env: placeholders in openclaw.json are substituted.
+  // The provider registration above handles L7 proxy auth header rewriting;
+  // the --env args here ensure the container env vars hold the real values.
+  if (tokensByEnvKey["SLACK_BOT_TOKEN"]) {
+    envArgs.push(formatEnvAssignment("SLACK_BOT_TOKEN", tokensByEnvKey["SLACK_BOT_TOKEN"]));
+    if (tokensByEnvKey["SLACK_APP_TOKEN"]) {
+      envArgs.push(formatEnvAssignment("SLACK_APP_TOKEN", tokensByEnvKey["SLACK_APP_TOKEN"]));
+    }
+  }
   const sandboxEnv = buildSubprocessEnv();
   // Remove host-infrastructure credentials that the generic allowlist
   // permits for host-side processes but that must not enter the sandbox.
