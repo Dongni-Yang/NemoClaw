@@ -416,7 +416,7 @@ describe("runtime model override (#759)", () => {
     // start where only a context-window or reasoning override was intended.
     const fn = src.match(/apply_model_override\(\) \{([\s\S]*?)^}/m);
     expect(fn).toBeTruthy();
-    expect(fn[1]).toContain('${NEMOCLAW_MODEL_OVERRIDE:-}');
+    expect(fn[1]).toContain("${NEMOCLAW_MODEL_OVERRIDE:-}");
   });
 });
 
