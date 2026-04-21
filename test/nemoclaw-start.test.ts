@@ -14,7 +14,9 @@ describe("nemoclaw-start non-root fallback", () => {
 
     expect(src).toMatch(/if \[ "\$\(id -u\)" -ne 0 \]; then/);
     expect(src).toMatch(/touch \/tmp\/gateway\.log/);
-    expect(src).toMatch(/nohup "\$OPENCLAW" gateway run --port "\$\{_DASHBOARD_PORT\}" >\/tmp\/gateway\.log 2>&1 &/);
+    expect(src).toMatch(
+      /nohup "\$OPENCLAW" gateway run --port "\$\{_DASHBOARD_PORT\}" >\/tmp\/gateway\.log 2>&1 &/,
+    );
   });
 
   it("exits on config integrity failure in non-root mode", () => {
@@ -320,7 +322,8 @@ describe("runtime model override (#759)", () => {
     expect(fn).toBeTruthy();
     // Guard checks all override env vars before returning early
     expect(fn[1]).toContain("NEMOCLAW_MODEL_OVERRIDE");
-    expect(fn[1]).toContain("|| return 0");
+    expect(fn[1]).toContain("NEMOCLAW_REASONING");
+    expect(fn[1]).toContain("return 0");
   });
 
   it("supports optional NEMOCLAW_INFERENCE_API_OVERRIDE for cross-provider switches", () => {
@@ -539,10 +542,21 @@ describe("Slack token placeholder resolution (#2085)", () => {
     expect(fn[1]).toContain("appToken");
   });
 
-  it("unsets SLACK_BOT_TOKEN and SLACK_APP_TOKEN before gateway starts in root path", () => {
-    const gatewayLaunch = src.match(/harden_openclaw_symlinks([\s\S]*?)nohup gosu gateway/);
-    expect(gatewayLaunch).toBeTruthy();
-    expect(gatewayLaunch[1]).toContain("unset SLACK_BOT_TOKEN SLACK_APP_TOKEN");
+  it("unsets SLACK_BOT_TOKEN and SLACK_APP_TOKEN before first gosu sandbox call in root path", () => {
+    // unset must appear after configure_messaging_channels and before the first gosu sandbox child
+    const block = src.match(/configure_messaging_channels\n([\s\S]*?)gosu sandbox bash/);
+    expect(block).toBeTruthy();
+    expect(block[1]).toContain("unset SLACK_BOT_TOKEN SLACK_APP_TOKEN");
+  });
+
+  it("fails fast when SLACK_BOT_TOKEN is set in non-root mode", () => {
+    const nonRootBlock = src.match(/if \[ "\$\(id -u\)" -ne 0 \]; then([\s\S]*?)# ── Root path/);
+    expect(nonRootBlock).toBeTruthy();
+    // After apply_slack_token_override (no-op without root) the non-root path must exit 1
+    expect(nonRootBlock[1]).toMatch(
+      /apply_slack_token_override[\s\S]*?SLACK_BOT_TOKEN[\s\S]*?exit 1/,
+    );
+    expect(nonRootBlock[1]).toContain("requires a root container");
   });
 
   it("passes tokens via env prefix, not as positional args", () => {

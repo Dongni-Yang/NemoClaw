@@ -161,8 +161,16 @@ describe("onboard helpers", () => {
 
   describe("computeSetupPresetSuggestions", () => {
     const known = [
-      "npm", "pypi", "huggingface", "brew", "brave",
-      "slack", "discord", "telegram", "jira", "outlook",
+      "npm",
+      "pypi",
+      "huggingface",
+      "brew",
+      "brave",
+      "slack",
+      "discord",
+      "telegram",
+      "jira",
+      "outlook",
       "local-inference",
     ];
 
@@ -3206,9 +3214,7 @@ const { createSandbox } = require(${onboardPath});
     { timeout: 60_000 },
     async () => {
       const repoRoot = path.join(import.meta.dirname, "..");
-      const tmpDir = fs.mkdtempSync(
-        path.join(os.tmpdir(), "nemoclaw-onboard-recreate-preserves-"),
-      );
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-onboard-recreate-preserves-"));
       const fakeBin = path.join(tmpDir, "bin");
       const scriptPath = path.join(tmpDir, "recreate-preserves.js");
       const onboardPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "onboard.js"));
@@ -4992,7 +4998,10 @@ const { createSandbox } = require(${onboardPath});
         fakeRef,
       );
       const patched = fs.readFileSync(dockerfilePath, "utf8");
-      assert.match(patched, /^ARG BASE_IMAGE=ghcr\.io\/nvidia\/nemoclaw\/sandbox-base@sha256:a{64}$/m);
+      assert.match(
+        patched,
+        /^ARG BASE_IMAGE=ghcr\.io\/nvidia\/nemoclaw\/sandbox-base@sha256:a{64}$/m,
+      );
       // Model patching still works alongside base image pinning
       assert.match(patched, /^ARG NEMOCLAW_MODEL=gpt-5\.4$/m);
     } finally {
@@ -5076,7 +5085,10 @@ const { createSandbox } = require(${onboardPath});
       );
       const patched = fs.readFileSync(dockerfilePath, "utf8");
       // No ARG BASE_IMAGE in original, so the ref should not appear
-      assert.ok(!patched.includes("ARG BASE_IMAGE="), "Should not inject BASE_IMAGE when line is absent");
+      assert.ok(
+        !patched.includes("ARG BASE_IMAGE="),
+        "Should not inject BASE_IMAGE when line is absent",
+      );
       // Other patching should still work
       assert.match(patched, /^ARG NEMOCLAW_MODEL=gpt-5\.4$/m);
     } finally {
