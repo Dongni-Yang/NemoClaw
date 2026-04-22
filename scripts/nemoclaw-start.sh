@@ -455,26 +455,29 @@ apply_slack_token_override() {
   SLACK_BOT_TOKEN="$SLACK_BOT_TOKEN" \
     SLACK_APP_TOKEN="${SLACK_APP_TOKEN:-}" \
     python3 - "$config_file" <<'PYSLACK'
-import json, os, sys
+import re, os, sys
 
 config_file = sys.argv[1]
 bot_token = os.environ["SLACK_BOT_TOKEN"]
 app_token = os.environ.get("SLACK_APP_TOKEN", "")
-placeholder_prefix = "openshell:resolve:env:"
 
 with open(config_file) as f:
-    cfg = json.load(f)
+    content = f.read()
 
-slack = cfg.get("channels", {}).get("slack", {})
-default_acct = slack.get("accounts", {}).get("default", {})
-
-if default_acct.get("botToken", "").startswith(placeholder_prefix):
-    default_acct["botToken"] = bot_token
-if app_token and default_acct.get("appToken", "").startswith(placeholder_prefix):
-    default_acct["appToken"] = app_token
+content = re.sub(
+    r'("botToken"\s*:\s*")openshell:resolve:env:SLACK_BOT_TOKEN(")',
+    lambda m: m.group(1) + bot_token + m.group(2),
+    content,
+)
+if app_token:
+    content = re.sub(
+        r'("appToken"\s*:\s*")openshell:resolve:env:SLACK_APP_TOKEN(")',
+        lambda m: m.group(1) + app_token + m.group(2),
+        content,
+    )
 
 with open(config_file, "w") as f:
-    json.dump(cfg, f, indent=2)
+    f.write(content)
 PYSLACK
 
   (cd /sandbox/.openclaw && sha256sum openclaw.json >"$hash_file")
