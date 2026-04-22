@@ -415,9 +415,11 @@ apply_slack_token_override() {
   [ -n "${SLACK_BOT_TOKEN:-}" ] || return 0
 
   # SECURITY: Only root can write to /sandbox/.openclaw (root:root 444).
+  # Non-root with SLACK_BOT_TOKEN set means the placeholder can never be resolved —
+  # Bolt will crash with invalid_auth. Fail fast rather than silently skip.
   if [ "$(id -u)" -ne 0 ]; then
-    printf '[SECURITY] Slack token override ignored — requires root (non-root mode cannot write to config)\n' >&2
-    return 0
+    printf '[SECURITY] Slack Socket Mode requires a root container — SLACK_BOT_TOKEN is set but token placeholder resolution needs root. Run the container as root or remove SLACK_BOT_TOKEN.\n' >&2
+    return 1
   fi
 
   local config_file="/sandbox/.openclaw/openclaw.json"
@@ -962,13 +964,6 @@ if [ "$(id -u)" -ne 0 ]; then
   apply_model_override
   apply_cors_override
   apply_slack_token_override
-  # SECURITY: apply_slack_token_override is a no-op when non-root.
-  # If SLACK_BOT_TOKEN is still set here the placeholder was never resolved —
-  # Bolt will crash with invalid_auth at startup. Fail fast with a clear message.
-  if [ -n "${SLACK_BOT_TOKEN:-}" ]; then
-    printf '[SECURITY] Slack Socket Mode requires a root container — SLACK_BOT_TOKEN is set but token placeholder resolution needs root. Run the container as root or remove SLACK_BOT_TOKEN.\n' >&2
-    exit 1
-  fi
   export_gateway_token
   install_configure_guard
   configure_messaging_channels
