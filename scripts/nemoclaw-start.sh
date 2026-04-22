@@ -457,24 +457,28 @@ apply_slack_token_override() {
   SLACK_BOT_TOKEN="$SLACK_BOT_TOKEN" \
     SLACK_APP_TOKEN="${SLACK_APP_TOKEN:-}" \
     python3 - "$config_file" <<'PYSLACK'
-import re, os, sys
+import json, os, re, sys
 
 config_file = sys.argv[1]
 bot_token = os.environ["SLACK_BOT_TOKEN"]
 app_token = os.environ.get("SLACK_APP_TOKEN", "")
+# json.dumps produces a quoted string; strip the outer quotes to get a
+# JSON-safe value that can be spliced directly into the existing string literal.
+bot_token_json = json.dumps(bot_token)[1:-1]
+app_token_json = json.dumps(app_token)[1:-1]
 
 with open(config_file) as f:
     content = f.read()
 
 content = re.sub(
     r'("botToken"\s*:\s*")openshell:resolve:env:SLACK_BOT_TOKEN(")',
-    lambda m: m.group(1) + bot_token + m.group(2),
+    lambda m: m.group(1) + bot_token_json + m.group(2),
     content,
 )
 if app_token:
     content = re.sub(
         r'("appToken"\s*:\s*")openshell:resolve:env:SLACK_APP_TOKEN(")',
-        lambda m: m.group(1) + app_token + m.group(2),
+        lambda m: m.group(1) + app_token_json + m.group(2),
         content,
     )
 
