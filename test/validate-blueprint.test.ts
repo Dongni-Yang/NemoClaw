@@ -319,13 +319,15 @@ describe("base sandbox policy", () => {
 
   it("regression #2663: managed_inference allows openclaw, claude, and tool binaries", () => {
     const np = policy.network_policies ?? {};
-    const binaries = (np.managed_inference?.binaries ?? []).map((b) => b.path);
-    expect(binaries).toContain("/usr/local/bin/openclaw");
-    expect(binaries).toContain("/usr/local/bin/claude");
-    expect(binaries).toContain("/usr/local/bin/node");
-    expect(binaries).toContain("/usr/bin/node");
-    expect(binaries).toContain("/usr/bin/curl");
-    expect(binaries).toContain("/usr/bin/python3");
+    const binaries = (np.managed_inference?.binaries ?? []).map((b) => b.path).sort();
+    expect(binaries).toEqual([
+      "/usr/bin/curl",
+      "/usr/bin/node",
+      "/usr/bin/python3",
+      "/usr/local/bin/claude",
+      "/usr/local/bin/node",
+      "/usr/local/bin/openclaw",
+    ]);
   });
 
   it("regression #1458: baseline npm_registry must not include npm or node binaries", () => {
