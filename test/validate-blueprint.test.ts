@@ -293,6 +293,41 @@ describe("base sandbox policy", () => {
     expect(githubHosts).toEqual([]);
   });
 
+  it("regression #2663: managed_inference policy allows inference.local:443 GET and POST", () => {
+    // inference.local is the OpenShell gateway's managed inference virtual
+    // hostname — the gateway proxies it to the configured provider (OpenAI,
+    // NVIDIA, etc.). Every sandbox uses this route regardless of provider.
+    // Without this entry the OpenShell proxy blocks url-fetch calls to
+    // https://inference.local/v1/... with "Blocked hostname or
+    // private/internal/special-use IP address", breaking all inference.
+    const np = policy.network_policies ?? {};
+    expect(np.managed_inference).toBeDefined();
+    const endpoints = np.managed_inference?.endpoints ?? [];
+    const inferenceEp = endpoints.find((ep) => ep.host === "inference.local");
+    expect(inferenceEp).toBeDefined();
+    expect(inferenceEp?.port).toBe(443);
+    const rules = inferenceEp?.rules ?? [];
+    const hasGet = rules.some(
+      (r) => r.allow?.method?.toUpperCase() === "GET" && r.allow?.path === "/**",
+    );
+    const hasPost = rules.some(
+      (r) => r.allow?.method?.toUpperCase() === "POST" && r.allow?.path === "/**",
+    );
+    expect(hasGet).toBe(true);
+    expect(hasPost).toBe(true);
+  });
+
+  it("regression #2663: managed_inference allows openclaw, claude, and tool binaries", () => {
+    const np = policy.network_policies ?? {};
+    const binaries = (np.managed_inference?.binaries ?? []).map((b) => b.path);
+    expect(binaries).toContain("/usr/local/bin/openclaw");
+    expect(binaries).toContain("/usr/local/bin/claude");
+    expect(binaries).toContain("/usr/local/bin/node");
+    expect(binaries).toContain("/usr/bin/node");
+    expect(binaries).toContain("/usr/bin/curl");
+    expect(binaries).toContain("/usr/bin/python3");
+  });
+
   it("regression #1458: baseline npm_registry must not include npm or node binaries", () => {
     const np = policy.network_policies ?? {};
     const npmRegistry = np.npm_registry;
