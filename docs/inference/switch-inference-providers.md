@@ -168,8 +168,11 @@ immutable at runtime, so this value can only be changed by rebuilding the
 sandbox via `nemoclaw onboard`.
 
 `NEMOCLAW_AGENT_HEARTBEAT_EVERY` sets `agents.defaults.heartbeat.every`.
-Set it to `0m` to disable the periodic heartbeat when it disrupts long-running agent turns.
-Leave it unset to preserve the OpenClaw default cadence.
+This controls OpenClaw's periodic main-session agent turn.
+Each interval, the agent wakes up to review follow-ups and read `HEARTBEAT.md` if present in the workspace.
+The OpenClaw default is 30 minutes (1 hour for Anthropic OAuth / Claude CLI reuse).
+Tune the cadence with a duration string like `5m` or `2h`, or set `0m` to disable the periodic turns entirely.
+Disabling also drops `HEARTBEAT.md` from normal-run bootstrap context per upstream behavior, so the model no longer sees heartbeat-only instructions.
 `openclaw.json` is immutable at runtime, so the in-sandbox `openclaw config set` command cannot change this.
 Rebuild the sandbox via `nemoclaw onboard --resume` to apply a new value.
 
