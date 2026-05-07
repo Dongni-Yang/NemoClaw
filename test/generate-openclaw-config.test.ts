@@ -272,7 +272,7 @@ describe("generate-openclaw-config.py: config generation", () => {
     const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
     expect(config.agents.defaults.heartbeat).toBeUndefined();
     expect(result.stderr).toMatch(
-      /\[SECURITY\] NEMOCLAW_AGENT_HEARTBEAT_EVERY.*"5 minutes"/,
+      /\[SECURITY\] NEMOCLAW_AGENT_HEARTBEAT_EVERY must match \^\\d\+\(s\|m\|h\)\$, got "5 minutes"/,
     );
   });
 

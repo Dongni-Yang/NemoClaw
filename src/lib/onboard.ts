@@ -2470,10 +2470,10 @@ function patchStagedDockerfile(
     );
   }
   // NEMOCLAW_AGENT_HEARTBEAT_EVERY — override agents.defaults.heartbeat.every
-  // at build time. Accepts Go-style durations ("30m", "1h"); "0m" disables
-  // heartbeat. Ref: issue #2880
+  // at build time. Accepts Go-style durations with a required s/m/h suffix
+  // ("30m", "1h"); "0m" disables heartbeat. Ref: issue #2880
   const agentHeartbeat = process.env.NEMOCLAW_AGENT_HEARTBEAT_EVERY;
-  if (agentHeartbeat && /^\d+(s|m|h)?$/.test(agentHeartbeat)) {
+  if (agentHeartbeat && /^\d+(s|m|h)$/.test(agentHeartbeat)) {
     dockerfile = dockerfile.replace(
       /^ARG NEMOCLAW_AGENT_HEARTBEAT_EVERY=.*$/m,
       `ARG NEMOCLAW_AGENT_HEARTBEAT_EVERY=${agentHeartbeat}`,

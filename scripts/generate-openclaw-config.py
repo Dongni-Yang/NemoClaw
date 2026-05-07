@@ -340,12 +340,13 @@ def build_config(env: dict | None = None) -> dict:
 
     # NemoClaw#2880: expose OpenClaw's agents.defaults.heartbeat.every so users
     # can disable the periodic heartbeat (e.g. "0m") without editing
-    # openclaw.json by hand. Accept a Go-style duration string (digits with an
-    # optional s/m/h suffix). Empty/unset preserves the OpenClaw default.
+    # openclaw.json by hand. Accept a Go-style duration string (digits + a
+    # required s/m/h suffix — OpenClaw docs always show the suffixed form).
+    # Empty/unset preserves the OpenClaw default.
     _raw_heartbeat = (env.get("NEMOCLAW_AGENT_HEARTBEAT_EVERY") or "").strip()
-    if _raw_heartbeat and not re.match(r"^\d+(s|m|h)?$", _raw_heartbeat):
+    if _raw_heartbeat and not re.match(r"^\d+(s|m|h)$", _raw_heartbeat):
         print(
-            f'[SECURITY] NEMOCLAW_AGENT_HEARTBEAT_EVERY must match ^\\d+(s|m|h)?$, '
+            f'[SECURITY] NEMOCLAW_AGENT_HEARTBEAT_EVERY must match ^\\d+(s|m|h)$, '
             f'got "{_raw_heartbeat}" — skipping override, preserving OpenClaw default',
             file=sys.stderr,
         )
