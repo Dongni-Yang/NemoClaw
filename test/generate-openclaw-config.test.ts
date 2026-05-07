@@ -265,9 +265,15 @@ describe("generate-openclaw-config.py: config generation", () => {
     expect(config.agents.defaults.heartbeat).toEqual({ every: "0m" });
   });
 
-  it("rejects malformed heartbeat values and preserves OpenClaw default", () => {
-    const config = runConfigScript({ NEMOCLAW_AGENT_HEARTBEAT_EVERY: "5 minutes" });
+  it("rejects malformed heartbeat values, preserves OpenClaw default, and warns on stderr", () => {
+    const result = runConfigScriptRaw({ NEMOCLAW_AGENT_HEARTBEAT_EVERY: "5 minutes" });
+    expect(result.status).toBe(0);
+    const configPath = path.join(tmpDir, ".openclaw", "openclaw.json");
+    const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
     expect(config.agents.defaults.heartbeat).toBeUndefined();
+    expect(result.stderr).toMatch(
+      /\[SECURITY\] NEMOCLAW_AGENT_HEARTBEAT_EVERY.*"5 minutes"/,
+    );
   });
 
   it("disables OpenClaw first-run workspace bootstrap", () => {
