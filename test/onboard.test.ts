@@ -9,9 +9,9 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 
-import type { AgentDefinition } from "../dist/lib/agent-defs.js";
-import { loadAgent } from "../dist/lib/agent-defs.js";
-import { buildChain, buildControlUiUrls } from "../dist/lib/dashboard-contract.js";
+import type { AgentDefinition } from "../dist/lib/agent/defs.js";
+import { loadAgent } from "../dist/lib/agent/defs.js";
+import { buildChain, buildControlUiUrls } from "../dist/lib/dashboard/contract.js";
 import { NAME_ALLOWED_FORMAT } from "../dist/lib/name-validation.js";
 import { stageOptimizedSandboxBuildContext } from "../dist/lib/sandbox-build-context.js";
 
@@ -1509,8 +1509,8 @@ describe("onboard helpers", () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-web-search-prompt-"));
     const scriptPath = path.join(tmpDir, "web-search-prompt-check.cjs");
     const onboardPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "onboard.js"));
-    const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials.js"));
-    const agentDefsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "agent-defs.js"));
+    const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials", "store.js"));
+    const agentDefsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "agent", "defs.js"));
 
     const script = `
 let promptCalls = 0;
@@ -2498,6 +2498,7 @@ const { setupInference } = require(${onboardPath});
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-onboard-router-inference-"));
     const fakeBin = path.join(tmpDir, "bin");
     const scriptPath = path.join(tmpDir, "setup-router-check.js");
+    const routerPort = 44000 + (process.pid % 10000);
     const onboardPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "onboard.js"));
     const runnerPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "runner.js"));
     const registryPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "state", "registry.js"));
@@ -2538,9 +2539,23 @@ const { setupInference } = require(${onboardPath});
     );
 
     const script = String.raw`
+const fs = require("fs");
+const path = require("path");
 const runner = require(${runnerPath});
 const _n = (c) => (Array.isArray(c) ? c.join(" ") : String(c)).replace(/'/g, "");
 const registry = require(${registryPath});
+const routerPort = ${routerPort};
+const blueprintPath = path.join(${JSON.stringify(repoRoot)}, "nemoclaw-blueprint", "blueprint.yaml");
+const originalReadFileSync = fs.readFileSync;
+fs.readFileSync = (filePath, ...args) => {
+  const raw = originalReadFileSync(filePath, ...args);
+  if (filePath === blueprintPath || String(filePath) === blueprintPath) {
+    return String(raw)
+      .replace('endpoint: "http://localhost:4000/v1"', 'endpoint: "http://localhost:' + routerPort + '/v1"')
+      .replace("port: 4000", "port: " + routerPort);
+  }
+  return raw;
+};
 
 const commands = [];
 runner.run = (command, opts = {}) => {
@@ -2574,7 +2589,7 @@ const { setupInference, getSandboxInferenceConfig } = require(${onboardPath});
     "router-box",
     "nvidia-routed",
     "nvidia-router",
-    "http://host.openshell.internal:4000/v1",
+    "http://host.openshell.internal:" + routerPort + "/v1",
     "NVIDIA_API_KEY",
   );
   console.log(JSON.stringify({
@@ -2611,7 +2626,7 @@ const { setupInference, getSandboxInferenceConfig } = require(${onboardPath});
     assert.match(providerCommand.command, /--credential NVIDIA_API_KEY/);
     assert.match(
       providerCommand.command,
-      /OPENAI_BASE_URL=http:\/\/host\.openshell\.internal:4000\/v1/,
+      new RegExp(`OPENAI_BASE_URL=http:\\/\\/host\\.openshell\\.internal:${routerPort}\\/v1`),
     );
     assert.doesNotMatch(providerCommand.command, /nvapi-router-secret/);
     assert.equal(providerCommand.env?.NVIDIA_API_KEY, "nvapi-router-secret");
@@ -2640,7 +2655,7 @@ const { setupInference, getSandboxInferenceConfig } = require(${onboardPath});
     const onboardPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "onboard.js"));
     const runnerPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "runner.js"));
     const registryPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "state", "registry.js"));
-    const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials.js"));
+    const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials", "store.js"));
     const localInferencePath = JSON.stringify(
       path.join(repoRoot, "dist", "lib", "local-inference.js"),
     );
@@ -3049,7 +3064,7 @@ const { setupInference } = require(${onboardPath});
     const onboardPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "onboard.js"));
     const runnerPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "runner.js"));
     const registryPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "state", "registry.js"));
-    const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials.js"));
+    const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials", "store.js"));
 
     fs.mkdirSync(fakeBin, { recursive: true });
     fs.writeFileSync(path.join(fakeBin, "openshell"), "#!/usr/bin/env bash\nexit 0\n", {
@@ -3139,7 +3154,7 @@ const { setupInference } = require(${onboardPath});
     const onboardPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "onboard.js"));
     const runnerPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "runner.js"));
     const registryPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "state", "registry.js"));
-    const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials.js"));
+    const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials", "store.js"));
 
     fs.mkdirSync(fakeBin, { recursive: true });
     fs.writeFileSync(path.join(fakeBin, "openshell"), "#!/usr/bin/env bash\nexit 0\n", {
@@ -3614,7 +3629,7 @@ console.log(JSON.stringify({ liveExists, sandbox: registry.getSandbox("my-assist
       const runnerPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "runner.js"));
       const registryPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "state", "registry.js"));
       const preflightPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "preflight.js"));
-      const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials.js"));
+      const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials", "store.js"));
 
       fs.mkdirSync(fakeBin, { recursive: true });
       fs.writeFileSync(path.join(fakeBin, "openshell"), "#!/usr/bin/env bash\nexit 0\n", {
@@ -3754,7 +3769,7 @@ const { createSandbox } = require(${onboardPath});
     const runnerPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "runner.js"));
     const registryPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "state", "registry.js"));
     const preflightPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "preflight.js"));
-    const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials.js"));
+    const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials", "store.js"));
 
     fs.mkdirSync(fakeBin, { recursive: true });
     fs.writeFileSync(path.join(fakeBin, "openshell"), "#!/usr/bin/env bash\nexit 0\n", {
@@ -3845,7 +3860,7 @@ const { createSandbox } = require(${onboardPath});
     const runnerPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "runner.js"));
     const registryPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "state", "registry.js"));
     const preflightPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "preflight.js"));
-    const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials.js"));
+    const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials", "store.js"));
 
     fs.mkdirSync(fakeBin, { recursive: true });
     fs.writeFileSync(path.join(fakeBin, "openshell"), "#!/usr/bin/env bash\nexit 0\n", {
@@ -3977,7 +3992,7 @@ const { createSandbox } = require(${onboardPath});
       const runnerPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "runner.js"));
       const registryPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "state", "registry.js"));
       const preflightPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "preflight.js"));
-      const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials.js"));
+      const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials", "store.js"));
 
       fs.mkdirSync(fakeBin, { recursive: true });
       fs.writeFileSync(path.join(fakeBin, "openshell"), "#!/usr/bin/env bash\nexit 0\n", {
@@ -4196,7 +4211,7 @@ const { createSandbox } = require(${onboardPath});
       const runnerPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "runner.js"));
       const registryPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "state", "registry.js"));
       const preflightPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "preflight.js"));
-      const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials.js"));
+      const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials", "store.js"));
 
       fs.mkdirSync(fakeBin, { recursive: true });
       fs.writeFileSync(path.join(fakeBin, "openshell"), "#!/usr/bin/env bash\nexit 0\n", {
@@ -4359,7 +4374,7 @@ const { createSandbox } = require(${onboardPath});
     const runnerPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "runner.js"));
     const registryPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "state", "registry.js"));
     const preflightPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "preflight.js"));
-    const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials.js"));
+    const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials", "store.js"));
 
     fs.mkdirSync(fakeBin, { recursive: true });
     fs.writeFileSync(path.join(fakeBin, "openshell"), "#!/usr/bin/env bash\nexit 0\n", {
@@ -4839,7 +4854,7 @@ const { createSandbox } = require(${onboardPath});
       const onboardPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "onboard.js"));
       const runnerPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "runner.js"));
       const registryPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "state", "registry.js"));
-      const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials.js"));
+      const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials", "store.js"));
 
       fs.mkdirSync(fakeBin, { recursive: true });
       fs.writeFileSync(path.join(fakeBin, "openshell"), "#!/usr/bin/env bash\nexit 0\n", {
@@ -4970,7 +4985,7 @@ const { createSandbox } = require(${onboardPath});
       const onboardPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "onboard.js"));
       const runnerPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "runner.js"));
       const registryPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "state", "registry.js"));
-      const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials.js"));
+      const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials", "store.js"));
 
       fs.mkdirSync(fakeBin, { recursive: true });
       fs.writeFileSync(path.join(fakeBin, "openshell"), "#!/usr/bin/env bash\nexit 0\n", {
@@ -5112,7 +5127,7 @@ const { createSandbox } = require(${onboardPath});
       const onboardPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "onboard.js"));
       const runnerPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "runner.js"));
       const registryPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "state", "registry.js"));
-      const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials.js"));
+      const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials", "store.js"));
 
       fs.mkdirSync(fakeBin, { recursive: true });
       fs.writeFileSync(path.join(fakeBin, "openshell"), "#!/usr/bin/env bash\nexit 0\n", {
@@ -5482,7 +5497,7 @@ console.log(JSON.stringify({ exists: providerExistsInGateway("discord-bridge") }
     const fakeBin = path.join(tmpDir, "bin");
     const scriptPath = path.join(tmpDir, "hydrate-cred.js");
     const onboardPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "onboard.js"));
-    const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials.js"));
+    const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials", "store.js"));
 
     fs.mkdirSync(fakeBin, { recursive: true });
     fs.writeFileSync(path.join(fakeBin, "openshell"), "#!/usr/bin/env bash\nexit 0\n", {
@@ -5600,7 +5615,7 @@ console.log(JSON.stringify({ exists: providerExistsInGateway("nonexistent") }));
       const runnerPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "runner.js"));
       const registryPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "state", "registry.js"));
       const preflightPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "preflight.js"));
-      const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials.js"));
+      const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials", "store.js"));
 
       fs.mkdirSync(fakeBin, { recursive: true });
       fs.writeFileSync(path.join(fakeBin, "openshell"), "#!/usr/bin/env bash\nexit 0\n", {
@@ -5999,7 +6014,7 @@ const { setupInference } = require(${onboardPath});
       const runnerPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "runner.js"));
       const registryPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "state", "registry.js"));
       const preflightPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "preflight.js"));
-      const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials.js"));
+      const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials", "store.js"));
 
       fs.mkdirSync(fakeBin, { recursive: true });
       fs.writeFileSync(path.join(fakeBin, "openshell"), "#!/usr/bin/env bash\nexit 0\n", {
@@ -6133,7 +6148,7 @@ const { createSandbox } = require(${onboardPath});
       const runnerPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "runner.js"));
       const registryPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "state", "registry.js"));
       const preflightPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "preflight.js"));
-      const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials.js"));
+      const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials", "store.js"));
 
       fs.mkdirSync(fakeBin, { recursive: true });
       fs.writeFileSync(path.join(fakeBin, "openshell"), "#!/usr/bin/env bash\nexit 0\n", {
@@ -6390,7 +6405,7 @@ const { setupMessagingChannels } = require(${onboardPath});
       const scriptPath = path.join(tmpDir, "slack-format-reject.js");
       const onboardPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "onboard.js"));
       const runnerPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "runner.js"));
-      const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials.js"));
+      const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials", "store.js"));
 
       fs.mkdirSync(fakeBin, { recursive: true });
       fs.writeFileSync(path.join(fakeBin, "openshell"), "#!/usr/bin/env bash\nexit 0\n", {
@@ -6501,7 +6516,7 @@ const { setupMessagingChannels, MESSAGING_CHANNELS } = require(${onboardPath});
       const scriptPath = path.join(tmpDir, "slack-app-format-reject.js");
       const onboardPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "onboard.js"));
       const runnerPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "runner.js"));
-      const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials.js"));
+      const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials", "store.js"));
 
       fs.mkdirSync(fakeBin, { recursive: true });
       fs.writeFileSync(path.join(fakeBin, "openshell"), "#!/usr/bin/env bash\nexit 0\n", {
@@ -6699,7 +6714,7 @@ const { setupMessagingChannels, MESSAGING_CHANNELS } = require(${onboardPath});
     const runnerPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "runner.js"));
     const registryPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "state", "registry.js"));
     const preflightPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "preflight.js"));
-    const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials.js"));
+    const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials", "store.js"));
 
     // Create a minimal custom Dockerfile in a temporary directory
     const customBuildDir = path.join(tmpDir, "custom-image");
@@ -6879,7 +6894,7 @@ const { createSandbox } = require(${onboardPath});
     const runnerPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "runner.js"));
     const registryPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "state", "registry.js"));
     const preflightPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "preflight.js"));
-    const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials.js"));
+    const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials", "store.js"));
 
     fs.mkdirSync(fakeBin, { recursive: true });
     fs.writeFileSync(path.join(fakeBin, "openshell"), "#!/usr/bin/env bash\nexit 0\n", {
@@ -6940,7 +6955,7 @@ const { createSandbox } = require(${onboardPath});
     const runnerPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "runner.js"));
     const registryPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "state", "registry.js"));
     const preflightPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "preflight.js"));
-    const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials.js"));
+    const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials", "store.js"));
 
     fs.mkdirSync(fakeBin, { recursive: true });
     fs.writeFileSync(path.join(fakeBin, "openshell"), "#!/usr/bin/env bash\nexit 0\n", {
@@ -7000,7 +7015,7 @@ const { createSandbox } = require(${onboardPath});
     const runnerPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "runner.js"));
     const registryPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "state", "registry.js"));
     const preflightPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "preflight.js"));
-    const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials.js"));
+    const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials", "store.js"));
     const ignoredDir = path.join(tmpDir, "node_modules", "pkg");
 
     fs.mkdirSync(ignoredDir, { recursive: true });
@@ -7063,7 +7078,7 @@ const { createSandbox } = require(${onboardPath});
     const runnerPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "runner.js"));
     const registryPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "state", "registry.js"));
     const preflightPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "preflight.js"));
-    const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials.js"));
+    const credentialsPath = JSON.stringify(path.join(repoRoot, "dist", "lib", "credentials", "store.js"));
     const customBuildDir = path.join(tmpDir, "custom-image");
 
     fs.mkdirSync(customBuildDir, { recursive: true });
