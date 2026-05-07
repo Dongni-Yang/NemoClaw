@@ -167,12 +167,11 @@ example, CPU-only Ollama or vLLM on modest hardware). `openclaw.json` is
 immutable at runtime, so this value can only be changed by rebuilding the
 sandbox via `nemoclaw onboard`.
 
-`NEMOCLAW_AGENT_HEARTBEAT_EVERY` sets `agents.defaults.heartbeat.every`. Set it
-to `0m` to disable the periodic heartbeat when it disrupts long-running agent
-turns; leave it unset to preserve the OpenClaw default cadence. `openclaw.json`
-is immutable at runtime, so the in-sandbox `openclaw config set` command cannot
-change this — rebuild the sandbox via `nemoclaw onboard --resume` to apply a
-new value.
+`NEMOCLAW_AGENT_HEARTBEAT_EVERY` sets `agents.defaults.heartbeat.every`.
+Set it to `0m` to disable the periodic heartbeat when it disrupts long-running agent turns.
+Leave it unset to preserve the OpenClaw default cadence.
+`openclaw.json` is immutable at runtime, so the in-sandbox `openclaw config set` command cannot change this.
+Rebuild the sandbox via `nemoclaw onboard --resume` to apply a new value.
 
 These variables are build-time settings.
 If you change them on an existing sandbox, recreate the sandbox so the new values bake into the image:
