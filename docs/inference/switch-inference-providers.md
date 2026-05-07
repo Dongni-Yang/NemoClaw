@@ -146,7 +146,7 @@ To change these values, set the corresponding environment variables before runni
 | `NEMOCLAW_REASONING` | `true` or `false` | `false` |
 | `NEMOCLAW_INFERENCE_INPUTS` | `text` or `text,image` | `text` |
 | `NEMOCLAW_AGENT_TIMEOUT` | Positive integer (seconds) | `600` |
-| `NEMOCLAW_AGENT_HEARTBEAT_EVERY` | Go-style duration (`30m`, `1h`, `0m` to disable) | unset (OpenClaw default) |
+| `NEMOCLAW_AGENT_HEARTBEAT_EVERY` | Go-style duration (`30m`, `1h`, `0m` to disable) | `unset` (OpenClaw default) |
 
 Invalid values are ignored, and the default bakes into the image.
 Use `NEMOCLAW_INFERENCE_INPUTS=text,image` only for a model that accepts image input through the selected provider.

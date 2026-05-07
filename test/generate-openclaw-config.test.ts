@@ -248,6 +248,13 @@ describe("generate-openclaw-config.py: config generation", () => {
     expect(config.agents.defaults.heartbeat).toBeUndefined();
   });
 
+  it("omits heartbeat when NEMOCLAW_AGENT_HEARTBEAT_EVERY is the empty string", () => {
+    // Docker promotes the unset ARG to an empty ENV value rather than dropping
+    // the variable, so the build path almost always sees "" rather than undefined.
+    const config = runConfigScript({ NEMOCLAW_AGENT_HEARTBEAT_EVERY: "" });
+    expect(config.agents.defaults.heartbeat).toBeUndefined();
+  });
+
   it("propagates heartbeat cadence into agents.defaults.heartbeat.every", () => {
     const config = runConfigScript({ NEMOCLAW_AGENT_HEARTBEAT_EVERY: "30m" });
     expect(config.agents.defaults.heartbeat).toEqual({ every: "30m" });
