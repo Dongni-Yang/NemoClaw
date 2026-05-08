@@ -251,8 +251,13 @@ run_cli_check() {
     # element to node — avoids SC2086 and any quoting surprises.
     local -a _invoke_args
     read -ra _invoke_args <<<"$invoke"
+    # Redirect stdin to /dev/null. The outer `while read` is consuming
+    # `$_tmp/help.txt` via `done <` redirection; any inner command that
+    # touches stdin (some node startup paths do) would eat subsequent
+    # lines, silently truncating the iteration. Negative-tested by
+    # mutating commands.md and confirming drift is now reported.
     local _help_text
-    _help_text="$("$NODE" "$CLI_JS" "${_invoke_args[@]}" --help 2>/dev/null || true)"
+    _help_text="$("$NODE" "$CLI_JS" "${_invoke_args[@]}" --help </dev/null 2>/dev/null || true)"
     [[ -z "$_help_text" ]] && continue
 
     local _flags
