@@ -65,7 +65,7 @@ The wizard creates an OpenShell gateway, registers inference providers, builds t
 Use this command for new installs and for recreating a sandbox after changes to policy or configuration.
 
 ```console
-$ nemoclaw onboard [--non-interactive] [--resume | --fresh] [--recreate-sandbox] [--gpu | --no-gpu] [--from <Dockerfile>] [--name <sandbox>] [--agent <name>] [--control-ui-port <N>] [--yes-i-accept-third-party-software]
+$ nemoclaw onboard [--non-interactive] [--resume | --fresh] [--recreate-sandbox] [--gpu | --no-gpu] [--from <Dockerfile>] [--name <sandbox>] [--agent <name>] [--control-ui-port <N>] [--yes | -y] [--yes-i-accept-third-party-software]
 ```
 
 :::{warning}
@@ -268,7 +268,7 @@ Sandboxes with an active SSH session are marked with a `●` indicator so you ca
 When a sandbox has a recorded dashboard port, the output includes its local dashboard URL.
 
 ```console
-$ nemoclaw list
+$ nemoclaw list [--json]
 $ nemoclaw list --json
 ```
 
@@ -305,8 +305,12 @@ After a host reboot, the OpenShell gateway rotates its SSH host keys.
 You no longer need to re-run `nemoclaw onboard` after a reboot in this case.
 
 ```console
-$ nemoclaw my-assistant connect
+$ nemoclaw my-assistant connect [--probe-only]
 ```
+
+| Flag | Description |
+|------|-------------|
+| `--probe-only` | Verify the sandbox is reachable over SSH, then exit without dropping into a shell. Useful for health checks and scripted readiness probes. |
 
 ### `nemoclaw <name> recover`
 
