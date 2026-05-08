@@ -274,7 +274,7 @@ run_cli_check() {
 
     while IFS= read -r flag; do
       [[ -z "$flag" ]] && continue
-      case "$flag" in --help|--version) continue ;; esac
+      case "$flag" in --help | --version) continue ;; esac
       # Word-boundary regex: treat letters/digits/_/- as continuation chars
       # so `--yes` does not match inside `--yes-i-accept-third-party-software`.
       local _pat="(^|[^a-zA-Z0-9_-])${flag}([^a-zA-Z0-9_-]|$)"
@@ -406,7 +406,7 @@ run_install_check() {
     local v
     v="$(echo "$_raw" | tr -d '[:space:]')"
     [[ -z "$v" ]] && continue
-    case "$v" in install-*|start-windows-ollama) continue ;; esac
+    case "$v" in install-* | start-windows-ollama) continue ;; esac
     if ! grep -qxF -- "$v" <<<"$_bootstrap_values"; then
       echo "check-docs: [install] provider \"$v\" canonical but absent from $BOOTSTRAP_SH bootstrap_usage" >&2
       _drift=1
