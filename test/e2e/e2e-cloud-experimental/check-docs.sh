@@ -34,6 +34,7 @@ NODE="${NODE:-node}"
 
 RUN_LINKS=1
 RUN_CLI=1
+RUN_INSTALL=1
 LOCAL_ONLY=0
 EXTRA_FILES=()
 VERBOSE="${CHECK_DOC_LINKS_VERBOSE:-0}"
@@ -41,13 +42,16 @@ WITH_SKILLS=0
 
 usage() {
   cat <<'EOF'
-Documentation checks: Markdown links + nemoclaw --help vs commands reference.
+Documentation checks: Markdown links + nemoclaw --help vs commands reference
++ install.sh --help vs canonical provider list.
 
 Usage: test/e2e/e2e-cloud-experimental/check-docs.sh [options] [extra.md ...]
 
 Options:
   --only-links     Run only the Markdown link check.
-  --only-cli       Run only the CLI help vs docs/reference/commands.md check.
+  --only-cli       Run only the CLI help vs docs/reference/commands.md check
+                   (includes both command-level and flag-level parity).
+  --only-install   Run only the install.sh --help vs canonical provider check.
   --local-only     Do not curl http(s) URLs (same as CHECK_DOC_LINKS_REMOTE=0).
   --with-skills    Also scan .agents/skills/**/*.md (link check).
   --verbose        Log each URL while curling (link check).
@@ -62,10 +66,17 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --only-links)
       RUN_CLI=0
+      RUN_INSTALL=0
       shift
       ;;
     --only-cli)
       RUN_LINKS=0
+      RUN_INSTALL=0
+      shift
+      ;;
+    --only-install)
+      RUN_LINKS=0
+      RUN_CLI=0
       shift
       ;;
     --local-only)
@@ -101,8 +112,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ "$RUN_LINKS" -eq 0 && "$RUN_CLI" -eq 0 ]]; then
-  echo "check-docs: use at least one of default (both), --only-links, or --only-cli" >&2
+if [[ "$RUN_LINKS" -eq 0 && "$RUN_CLI" -eq 0 && "$RUN_INSTALL" -eq 0 ]]; then
+  echo "check-docs: use at least one of default (all), --only-links, --only-cli, or --only-install" >&2
   exit 2
 fi
 
@@ -172,26 +183,162 @@ run_cli_check() {
   _n_doc="$(wc -l <"$_tmp/doc.txt" | tr -d " ")"
   log "[cli] phase 2: extracted ${_n_doc} heading(s) from ${COMMANDS_MD#"$REPO_ROOT"/}"
 
-  if cmp -s "$_tmp/help.txt" "$_tmp/doc.txt"; then
-    log "[cli] parity OK (${_n_help} nemoclaw command(s))"
-    while IFS= read -r line || [[ -n "$line" ]]; do
-      [[ -z "$line" ]] && continue
-      log "[cli]   $line"
-    done <"$_tmp/help.txt"
-    log "[cli] done."
+  if ! cmp -s "$_tmp/help.txt" "$_tmp/doc.txt"; then
+    echo "check-docs: [cli] mismatch between --help and $COMMANDS_MD" >&2
+    echo "" >&2
+    echo "Only in --help (add ### to commands.md or fix help):" >&2
+    comm -23 "$_tmp/help.txt" "$_tmp/doc.txt" | sed 's/^/  /' >&2 || true
+    echo "" >&2
+    echo "Only in commands.md (add to help() in bin/nemoclaw.js or fix heading):" >&2
+    comm -13 "$_tmp/help.txt" "$_tmp/doc.txt" | sed 's/^/  /' >&2 || true
     rm -rf "$_tmp"
-    return 0
+    return 1
   fi
 
-  echo "check-docs: [cli] mismatch between --help and $COMMANDS_MD" >&2
-  echo "" >&2
-  echo "Only in --help (add ### to commands.md or fix help):" >&2
-  comm -23 "$_tmp/help.txt" "$_tmp/doc.txt" | sed 's/^/  /' >&2 || true
-  echo "" >&2
-  echo "Only in commands.md (add to help() in bin/nemoclaw.js or fix heading):" >&2
-  comm -13 "$_tmp/help.txt" "$_tmp/doc.txt" | sed 's/^/  /' >&2 || true
+  log "[cli] command-level parity OK (${_n_help} nemoclaw command(s))"
+
+  # ── Phase 3/3: flag-level parity (NemoClaw#3224) ──────────────────────────
+  # For each command, run `nemoclaw <cmd> --help`, extract long-form flag
+  # names from the FLAGS section, and confirm each appears in commands.md.
+  # Skips global flags (-h/--help/--version) and sandbox-name placeholders.
+  log "[cli] phase 3/3: flag-level parity"
+  local _flag_drift=0
+  while IFS= read -r cmd_line || [[ -n "$cmd_line" ]]; do
+    [[ -z "$cmd_line" ]] && continue
+    # Replace <name> placeholder with a dummy sandbox name so help can run.
+    local invoke
+    invoke="${cmd_line//<name>/_check_docs_sandbox_}"
+    # Collect FLAGS block; tolerate commands that take no flags.
+    local _flags
+    _flags="$("$NODE" "$CLI_JS" $invoke --help 2>/dev/null | awk '
+      /^FLAGS$/        { in_flags = 1; next }
+      /^[A-Z]/ && in_flags { exit }
+      in_flags         { print }
+    ' | grep -oE -- '--[a-z][a-z0-9-]+' | LC_ALL=C sort -u || true)"
+    [[ -z "$_flags" ]] && continue
+
+    while IFS= read -r flag; do
+      [[ -z "$flag" ]] && continue
+      case "$flag" in --help|--version) continue ;; esac
+      if ! grep -qF -- "$flag" "$COMMANDS_MD"; then
+        echo "check-docs: [cli] flag $flag (from \`$cmd_line --help\`) not mentioned in $COMMANDS_MD" >&2
+        _flag_drift=1
+      fi
+    done <<<"$_flags"
+  done <"$_tmp/help.txt"
+
+  if [[ "$_flag_drift" -ne 0 ]]; then
+    rm -rf "$_tmp"
+    return 1
+  fi
+
+  log "[cli] flag-level parity OK"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" ]] && continue
+    log "[cli]   $line"
+  done <"$_tmp/help.txt"
+  log "[cli] done."
   rm -rf "$_tmp"
-  return 1
+  return 0
+}
+
+# --- Install: install.sh --help vs canonical provider list (NemoClaw#3224) ----
+
+run_install_check() {
+  # Two installer entry points need to stay in sync with the canonical
+  # provider list:
+  #   1. install.sh (bootstrap_usage) — what users see via `curl | bash --help`
+  #   2. scripts/install.sh — what the bootstrap sources locally; what users
+  #      see when they run `bash install.sh --help` from a clone
+  local BOOTSTRAP_SH="$REPO_ROOT/install.sh"
+  local PAYLOAD_SH="$REPO_ROOT/scripts/install.sh"
+
+  # The providers list has moved between layouts; tolerate both the legacy
+  # flat path and the post-refactor layered path.
+  local PROVIDERS_TS=""
+  for _candidate in \
+    "$REPO_ROOT/src/lib/onboard/providers.ts" \
+    "$REPO_ROOT/src/lib/onboard-providers.ts"; do
+    if [[ -f "$_candidate" ]]; then
+      PROVIDERS_TS="$_candidate"
+      break
+    fi
+  done
+
+  if [[ ! -f "$BOOTSTRAP_SH" ]]; then
+    echo "check-docs: [install] missing $BOOTSTRAP_SH" >&2
+    return 1
+  fi
+  if [[ -z "$PROVIDERS_TS" ]]; then
+    echo "check-docs: [install] could not locate onboard providers TS source" >&2
+    return 1
+  fi
+
+  log "[install] comparing: NEMOCLAW_PROVIDER values in install.sh + scripts/install.sh"
+  log "[install]        vs: ${PROVIDERS_TS#"$REPO_ROOT"/} canonical 'Valid values' list"
+
+  # The canonical values live in a single error-message line that lists every
+  # accepted NEMOCLAW_PROVIDER input. Extract the comma-separated payload.
+  local _canonical
+  _canonical="$(grep -oE 'Valid values: [^"]+' "$PROVIDERS_TS" | head -1 | sed 's/^Valid values: //')"
+  if [[ -z "$_canonical" ]]; then
+    echo "check-docs: [install] could not locate canonical provider list in $PROVIDERS_TS" >&2
+    return 1
+  fi
+
+  # Extract the NEMOCLAW_PROVIDER usage block from each script (the printf
+  # lines starting at NEMOCLAW_PROVIDER through the next NEMOCLAW_ entry or
+  # blank-line printf), then verify each canonical value appears within that
+  # block. Grepping the whole script would match unrelated mentions of
+  # `gemini` / `ollama` in helper text, prompts, etc.
+  #
+  # Skip the install-helper / wizard-only keys (install-vllm, install-ollama,
+  # install-windows-ollama, start-windows-ollama). They are option keys the
+  # interactive wizard exposes, not values a user is expected to set
+  # NEMOCLAW_PROVIDER to from the installer entrypoint.
+  extract_provider_block() {
+    awk '
+      /printf .*NEMOCLAW_PROVIDER/ { in_block = 1 }
+      in_block { print }
+      in_block && /printf .*NEMOCLAW_(POLICY|MODEL|EXPERIMENTAL|SANDBOX_NAME|FROM_DOCKERFILE)/ && !/NEMOCLAW_PROVIDER/ {
+        in_block = 0
+      }
+    ' "$1"
+  }
+
+  local _bootstrap_block _payload_block _drift=0
+  _bootstrap_block="$(extract_provider_block "$BOOTSTRAP_SH")"
+  if [[ -z "$_bootstrap_block" ]]; then
+    echo "check-docs: [install] no NEMOCLAW_PROVIDER block found in $BOOTSTRAP_SH" >&2
+    return 1
+  fi
+  if [[ -f "$PAYLOAD_SH" ]]; then
+    _payload_block="$(extract_provider_block "$PAYLOAD_SH")"
+  fi
+
+  IFS=',' read -ra _values <<<"$_canonical"
+  for _raw in "${_values[@]}"; do
+    local v
+    v="$(echo "$_raw" | tr -d '[:space:]')"
+    [[ -z "$v" ]] && continue
+    case "$v" in install-*|start-windows-ollama) continue ;; esac
+    if ! grep -qF -- "$v" <<<"$_bootstrap_block"; then
+      echo "check-docs: [install] provider \"$v\" canonical but absent from $BOOTSTRAP_SH bootstrap_usage" >&2
+      _drift=1
+    fi
+    if [[ -n "$_payload_block" ]] && ! grep -qF -- "$v" <<<"$_payload_block"; then
+      echo "check-docs: [install] provider \"$v\" canonical but absent from $PAYLOAD_SH usage()" >&2
+      _drift=1
+    fi
+  done
+
+  if [[ "$_drift" -ne 0 ]]; then
+    return 1
+  fi
+
+  log "[install] parity OK"
+  log "[install] done."
+  return 0
 }
 
 # --- Markdown links -------------------------------------------------------------
@@ -520,16 +667,21 @@ run_links_check() {
 
 # --- main ---------------------------------------------------------------------
 
-if [[ "$RUN_LINKS" -eq 1 && "$RUN_CLI" -eq 1 ]]; then
-  log "running both: [cli] then [links] (--only-links / --only-cli for one)"
-elif [[ "$RUN_LINKS" -eq 1 ]]; then
-  log "running: [links] only"
-else
-  log "running: [cli] only"
-fi
+_planned=()
+[[ "$RUN_CLI" -eq 1 ]] && _planned+=("[cli]")
+[[ "$RUN_INSTALL" -eq 1 ]] && _planned+=("[install]")
+[[ "$RUN_LINKS" -eq 1 ]] && _planned+=("[links]")
+log "running: ${_planned[*]}"
+unset _planned
 
 if [[ "$RUN_CLI" -eq 1 ]]; then
   if ! run_cli_check; then
+    exit 1
+  fi
+fi
+
+if [[ "$RUN_INSTALL" -eq 1 ]]; then
+  if ! run_install_check; then
     exit 1
   fi
 fi

@@ -17,6 +17,7 @@ on:
       - "src/**"
       - "bin/**"
       - "install.sh"
+      - "scripts/install.sh"
       - "docs/reference/commands.md"
       - "package.json"
       - "package-lock.json"
@@ -50,5 +51,8 @@ jobs:
       - name: Build CLI
         run: npm run build:cli
 
-      - name: Run CLI/docs parity check
+      - name: Run CLI/docs parity check (command + flag level)
         run: bash test/e2e/e2e-cloud-experimental/check-docs.sh --only-cli
+
+      - name: Run install.sh provider parity check
+        run: bash test/e2e/e2e-cloud-experimental/check-docs.sh --only-install
