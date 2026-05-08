@@ -350,12 +350,17 @@ run_install_check() {
   # interactive wizard exposes, not values a user is expected to set
   # NEMOCLAW_PROVIDER to from the installer entrypoint.
   extract_provider_block() {
+    # Order matters: check the boundary BEFORE printing so the next
+    # NEMOCLAW_* printf line (e.g. NEMOCLAW_POLICY_MODE) does not bleed
+    # into the block. `custom` is both a canonical provider value and a
+    # POLICY_MODE token, so a leaked POLICY line would falsely make it
+    # appear that `custom` is documented even after removal.
     awk '
-      /printf .*NEMOCLAW_PROVIDER/ { in_block = 1 }
-      in_block { print }
-      in_block && /printf .*NEMOCLAW_(POLICY|MODEL|EXPERIMENTAL|SANDBOX_NAME|FROM_DOCKERFILE)/ && !/NEMOCLAW_PROVIDER/ {
+      /printf .*NEMOCLAW_PROVIDER/ { in_block = 1; print; next }
+      in_block && /printf .*NEMOCLAW_/ && !/NEMOCLAW_PROVIDER/ {
         in_block = 0
       }
+      in_block { print }
     ' "$1"
   }
 
@@ -369,17 +374,39 @@ run_install_check() {
     _payload_block="$(extract_provider_block "$PAYLOAD_SH")"
   fi
 
+  # Tokenize each block into the discrete provider identifiers it mentions
+  # so we can exact-match (not substring-match) against the canonical list.
+  # Substring matching would let `anthropic` falsely pass when only
+  # `anthropicCompatible` appears.
+  # The pattern allows camelCase since `anthropicCompatible` is canonical.
+  # `\n` literals in printf strings are stripped first so tokens at line
+  # ends (e.g. `routed\n"`) reduce to the bare identifier.
+  tokenize_provider_block() {
+    printf '%s\n' "$1" \
+      | sed 's/\\n//g' \
+      | tr '"`,()|' '\n' \
+      | sed 's/[[:space:]]\+/\n/g' \
+      | grep -E '^[a-zA-Z][a-zA-Z0-9-]*$' \
+      | LC_ALL=C sort -u
+  }
+
+  local _bootstrap_values _payload_values=""
+  _bootstrap_values="$(tokenize_provider_block "$_bootstrap_block")"
+  if [[ -n "${_payload_block:-}" ]]; then
+    _payload_values="$(tokenize_provider_block "$_payload_block")"
+  fi
+
   IFS=',' read -ra _values <<<"$_canonical"
   for _raw in "${_values[@]}"; do
     local v
     v="$(echo "$_raw" | tr -d '[:space:]')"
     [[ -z "$v" ]] && continue
     case "$v" in install-*|start-windows-ollama) continue ;; esac
-    if ! grep -qF -- "$v" <<<"$_bootstrap_block"; then
+    if ! grep -qxF -- "$v" <<<"$_bootstrap_values"; then
       echo "check-docs: [install] provider \"$v\" canonical but absent from $BOOTSTRAP_SH bootstrap_usage" >&2
       _drift=1
     fi
-    if [[ -n "$_payload_block" ]] && ! grep -qF -- "$v" <<<"$_payload_block"; then
+    if [[ -n "$_payload_values" ]] && ! grep -qxF -- "$v" <<<"$_payload_values"; then
       echo "check-docs: [install] provider \"$v\" canonical but absent from $PAYLOAD_SH usage()" >&2
       _drift=1
     fi
