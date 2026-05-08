@@ -308,9 +308,8 @@ You no longer need to re-run `nemoclaw onboard` after a reboot in this case.
 $ nemoclaw my-assistant connect [--probe-only]
 ```
 
-| Flag | Description |
-|------|-------------|
-| `--probe-only` | Verify the sandbox is reachable over SSH, then exit without dropping into a shell. Useful for health checks and scripted readiness probes. |
+The `--probe-only` flag verifies the sandbox is reachable over SSH and exits without opening a shell.
+Use it for health checks and scripted readiness probes.
 
 ### `nemoclaw <name> recover`
 
