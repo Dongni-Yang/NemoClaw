@@ -218,21 +218,33 @@ run_cli_check() {
   # sandbox. Tracked as a follow-up to NemoClaw#3224.
   log "[cli] phase 3/3: flag-level parity"
 
-  # Awk extractor: print lines belonging to the section whose heading is
-  # exactly `### \`<cmd>\`` (with optional MyST anchor). Stops at the next
-  # ### heading.
+  # Awk extractor: print lines belonging to the section whose heading
+  # canonicalizes to <cmd> after the same trailing-placeholder strip phase 2
+  # applies (`### \`nemoclaw foo <ARG>\`` → `nemoclaw foo`). Stops at the
+  # next ### heading. MyST anchors after the closing backtick are tolerated.
   extract_md_section() {
     local cmd="$1"
     local md="$2"
-    LC_ALL=C awk -v target="### \`$cmd\`" '
-      index($0, target) == 1 {
-        rest = substr($0, length(target) + 1)
-        if (rest == "" || rest ~ /^[[:space:]]*\{[^}]+\}[[:space:]]*$/) {
-          in_sec = 1
-          next
+    LC_ALL=C awk -v target="$cmd" '
+      # End the section when a new top-level heading appears (h1, h2, or
+      # h3). h4+ are kept since they are sub-sections of the same command.
+      # Explicit alternation since traditional awk treats `{n,m}` literally.
+      in_sec && /^(# |## |### )/ { exit }
+      /^### `/ {
+        line = $0
+        sub(/^### `/, "", line)
+        bt = index(line, "`")
+        if (bt > 0) {
+          cand = substr(line, 1, bt - 1)
+          while (sub(/[[:space:]]*\[[^]]*\][[:space:]]*$/, "", cand)) {}
+          while (sub(/[[:space:]]+<[^>]+>[[:space:]]*$/, "", cand)) {}
+          sub(/[[:space:]]+$/, "", cand)
+          if (cand == target) {
+            in_sec = 1
+            next
+          }
         }
       }
-      in_sec && /^### `/ { exit }
       in_sec { print }
     ' "$md"
   }
@@ -240,6 +252,11 @@ run_cli_check() {
   local _flag_drift=0
   while IFS= read -r cmd_line || [[ -n "$cmd_line" ]]; do
     [[ -z "$cmd_line" ]] && continue
+    # Skip "command-line variant" entries like `nemoclaw onboard --from`
+    # — those describe a flagged invocation of a parent command (here
+    # `nemoclaw onboard`) that is iterated separately. Re-invoking them
+    # with `--help` would just trigger flag-value parsing errors.
+    case "$cmd_line" in *" --"*) continue ;; esac
     # `--dump-commands` lines start with `nemoclaw `; strip that since we
     # re-invoke via `node bin/nemoclaw.js`. Then replace <name> with a
     # sandbox name that passes name validation (lowercase, starts with
@@ -256,8 +273,25 @@ run_cli_check() {
     # touches stdin (some node startup paths do) would eat subsequent
     # lines, silently truncating the iteration. Negative-tested by
     # mutating commands.md and confirming drift is now reported.
-    local _help_text
-    _help_text="$("$NODE" "$CLI_JS" "${_invoke_args[@]}" --help </dev/null 2>/dev/null || true)"
+    #
+    # Capture exit code separately so a real failure (broken command path,
+    # crashed loader, etc.) propagates instead of being swallowed by
+    # `|| true`. Sandbox-name validation is the only expected failure mode
+    # on a CI runner with no registered sandbox; other non-zero exits abort.
+    local _help_text _help_err _help_rc=0
+    _help_err="$(mktemp)"
+    _help_text="$("$NODE" "$CLI_JS" "${_invoke_args[@]}" --help </dev/null 2>"$_help_err")" || _help_rc=$?
+    if [[ "$_help_rc" -ne 0 ]]; then
+      if [[ "$cmd_line" == *"<name>"* ]] && grep -qi 'sandbox' "$_help_err"; then
+        rm -f "$_help_err"
+        continue
+      fi
+      cat "$_help_err" >&2
+      rm -f "$_help_err"
+      rm -rf "$_tmp"
+      return 1
+    fi
+    rm -f "$_help_err"
     [[ -z "$_help_text" ]] && continue
 
     local _flags
@@ -283,6 +317,37 @@ run_cli_check() {
         _flag_drift=1
       fi
     done <<<"$_flags"
+
+    # Reverse direction: extract long flags mentioned in the doc section
+    # and confirm each appears in the actual --help. Catches stale docs
+    # (flag removed from CLI but still listed in commands.md).
+    #
+    # Scoping rule: inside fenced code blocks (where USAGE lines live like
+    # `[--non-interactive]`), any `--foo` counts. Outside fences, only
+    # backtick-bounded `\`--foo\`` mentions count, so prose references to
+    # other tools (e.g. `\`openshell gateway start --recreate\``) don't get
+    # mistaken for nemoclaw flag documentation.
+    local _doc_flags
+    _doc_flags="$(
+      printf '%s\n' "$_section" \
+        | LC_ALL=C perl -CS -ne '
+            if (/^```/) { $in_fence = !$in_fence; next; }
+            if ($in_fence) {
+              while (/--([a-z][a-z0-9-]+)/g) { print "--$1\n"; }
+            } else {
+              while (/`--([a-z][a-z0-9-]+)/g) { print "--$1\n"; }
+            }
+          ' \
+        | grep -vxE -- '--help|--version' \
+        | LC_ALL=C sort -u || true
+    )"
+    while IFS= read -r flag; do
+      [[ -z "$flag" ]] && continue
+      if ! grep -qxF -- "$flag" <<<"$_flags"; then
+        echo "check-docs: [cli] flag $flag documented under \`$cmd_line\` but absent from \`$cmd_line --help\`" >&2
+        _flag_drift=1
+      fi
+    done <<<"$_doc_flags"
   done <"$_tmp/help.txt"
 
   if [[ "$_flag_drift" -ne 0 ]]; then
@@ -387,11 +452,19 @@ run_install_check() {
   # `\n` literals in printf strings are stripped first so tokens at line
   # ends (e.g. `routed\n"`) reduce to the bare identifier.
   tokenize_provider_block() {
+    # Drop `(aliases: cloud -> build, ...)` lines (alias keys aren't
+    # canonical providers and would falsely fail the bidirectional check)
+    # and the shell tokens `printf` / `NEMOCLAW_PROVIDER` that appear
+    # because the block opens with a `printf "    NEMOCLAW_PROVIDER ..."`
+    # line. Both filters exist solely to clean up tokenization artifacts;
+    # they don't relax the actual provider-name check.
     printf '%s\n' "$1" \
+      | grep -v '(aliases:' \
       | sed 's/\\n//g' \
       | tr '"`,()|' '\n' \
       | sed 's/[[:space:]]\+/\n/g' \
       | grep -E '^[a-zA-Z][a-zA-Z0-9-]*$' \
+      | grep -vxE 'printf|NEMOCLAW_PROVIDER' \
       | LC_ALL=C sort -u
   }
 
@@ -416,6 +489,36 @@ run_install_check() {
       _drift=1
     fi
   done
+
+  # Reverse direction: tokens appearing in either install help block but
+  # not on the canonical list mean the script is advertising a provider
+  # that the CLI no longer accepts. Build the canonical set with the same
+  # exemptions used above.
+  local _canonical_values
+  _canonical_values="$(
+    printf '%s\n' "$_canonical" \
+      | tr ',' '\n' \
+      | sed 's/[[:space:]]//g' \
+      | grep -vxE 'install-.*|start-windows-ollama' \
+      | grep -E '^[a-zA-Z][a-zA-Z0-9-]*$' \
+      | LC_ALL=C sort -u
+  )"
+  while IFS= read -r v; do
+    [[ -z "$v" ]] && continue
+    if ! grep -qxF -- "$v" <<<"$_canonical_values"; then
+      echo "check-docs: [install] provider \"$v\" appears in $BOOTSTRAP_SH bootstrap_usage but is not canonical" >&2
+      _drift=1
+    fi
+  done <<<"$_bootstrap_values"
+  if [[ -n "$_payload_values" ]]; then
+    while IFS= read -r v; do
+      [[ -z "$v" ]] && continue
+      if ! grep -qxF -- "$v" <<<"$_canonical_values"; then
+        echo "check-docs: [install] provider \"$v\" appears in $PAYLOAD_SH usage() but is not canonical" >&2
+        _drift=1
+      fi
+    done <<<"$_payload_values"
+  fi
 
   if [[ "$_drift" -ne 0 ]]; then
     return 1
