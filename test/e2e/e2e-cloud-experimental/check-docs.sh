@@ -198,30 +198,83 @@ run_cli_check() {
   log "[cli] command-level parity OK (${_n_help} nemoclaw command(s))"
 
   # ── Phase 3/3: flag-level parity (NemoClaw#3224) ──────────────────────────
-  # For each command, run `nemoclaw <cmd> --help`, extract long-form flag
-  # names from the FLAGS section, and confirm each appears in commands.md.
-  # Skips global flags (-h/--help/--version) and sandbox-name placeholders.
+  # For each command, run its `--help`, extract every long-form flag mentioned,
+  # and confirm each appears within that command's own section in
+  # commands.md (between its `### \`nemoclaw <cmd>\`` heading and the next
+  # ### heading). Two help formats coexist: oclif global commands use a
+  # USAGE/FLAGS layout; `nemoclaw <name> ...` commands use a custom
+  # Options: section. Greping the full help output handles both formats.
+  # Section-scoped grep avoids false negatives where a flag like `--yes`
+  # appears in many sections but is missing from the one being audited.
+  # Word-boundary regex avoids false positives where `--yes` is contained
+  # in `--yes-i-accept-third-party-software`. Skips global -h/--help/--version.
+  #
+  # Coverage caveat: most `nemoclaw <name> ...` commands (channels add,
+  # destroy, rebuild, doctor, skill install) gate `--help` behind
+  # sandbox-name validation that requires a registered sandbox. On a CI
+  # runner with no sandbox they emit only an error and we skip the empty
+  # help text. Flag drift on those commands is therefore not caught here;
+  # it would be caught by the existing E2E suite which runs against a real
+  # sandbox. Tracked as a follow-up to NemoClaw#3224.
   log "[cli] phase 3/3: flag-level parity"
+
+  # Awk extractor: print lines belonging to the section whose heading is
+  # exactly `### \`<cmd>\`` (with optional MyST anchor). Stops at the next
+  # ### heading.
+  extract_md_section() {
+    local cmd="$1"
+    local md="$2"
+    LC_ALL=C awk -v target="### \`$cmd\`" '
+      index($0, target) == 1 {
+        rest = substr($0, length(target) + 1)
+        if (rest == "" || rest ~ /^[[:space:]]*\{[^}]+\}[[:space:]]*$/) {
+          in_sec = 1
+          next
+        }
+      }
+      in_sec && /^### `/ { exit }
+      in_sec { print }
+    ' "$md"
+  }
+
   local _flag_drift=0
   while IFS= read -r cmd_line || [[ -n "$cmd_line" ]]; do
     [[ -z "$cmd_line" ]] && continue
-    # Replace <name> placeholder with a dummy sandbox name so help can run.
+    # `--dump-commands` lines start with `nemoclaw `; strip that since we
+    # re-invoke via `node bin/nemoclaw.js`. Then replace <name> with a
+    # sandbox name that passes name validation (lowercase, starts with
+    # letter, only letters/digits/hyphens — underscores are rejected).
     local invoke
-    invoke="${cmd_line//<name>/_check_docs_sandbox_}"
-    # Collect FLAGS block; tolerate commands that take no flags.
+    invoke="${cmd_line#nemoclaw }"
+    invoke="${invoke//<name>/placeholder-sandbox}"
+    # Read into an array so each space-separated token is a distinct argv
+    # element to node — avoids SC2086 and any quoting surprises.
+    local -a _invoke_args
+    read -ra _invoke_args <<<"$invoke"
+    local _help_text
+    _help_text="$("$NODE" "$CLI_JS" "${_invoke_args[@]}" --help 2>/dev/null || true)"
+    [[ -z "$_help_text" ]] && continue
+
     local _flags
-    _flags="$("$NODE" "$CLI_JS" $invoke --help 2>/dev/null | awk '
-      /^FLAGS$/        { in_flags = 1; next }
-      /^[A-Z]/ && in_flags { exit }
-      in_flags         { print }
-    ' | grep -oE -- '--[a-z][a-z0-9-]+' | LC_ALL=C sort -u || true)"
+    _flags="$(echo "$_help_text" | grep -oE -- '--[a-z][a-z0-9-]+' | LC_ALL=C sort -u || true)"
     [[ -z "$_flags" ]] && continue
+
+    local _section
+    _section="$(extract_md_section "$cmd_line" "$COMMANDS_MD")"
+    if [[ -z "$_section" ]]; then
+      # Phase 2 already enforces the heading exists; if the section is
+      # somehow empty here, fall back to the full doc rather than skipping.
+      _section="$(cat "$COMMANDS_MD")"
+    fi
 
     while IFS= read -r flag; do
       [[ -z "$flag" ]] && continue
       case "$flag" in --help|--version) continue ;; esac
-      if ! grep -qF -- "$flag" "$COMMANDS_MD"; then
-        echo "check-docs: [cli] flag $flag (from \`$cmd_line --help\`) not mentioned in $COMMANDS_MD" >&2
+      # Word-boundary regex: treat letters/digits/_/- as continuation chars
+      # so `--yes` does not match inside `--yes-i-accept-third-party-software`.
+      local _pat="(^|[^a-zA-Z0-9_-])${flag}([^a-zA-Z0-9_-]|$)"
+      if ! grep -qE -- "$_pat" <<<"$_section"; then
+        echo "check-docs: [cli] flag $flag (from \`$cmd_line --help\`) not in '$cmd_line' section of $COMMANDS_MD" >&2
         _flag_drift=1
       fi
     done <<<"$_flags"
