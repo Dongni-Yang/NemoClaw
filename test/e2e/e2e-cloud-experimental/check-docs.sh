@@ -147,6 +147,11 @@ run_cli_check() {
 
   local _tmp
   _tmp="$(mktemp -d)"
+  local _cli_home="$_tmp/home"
+  mkdir -p "$_cli_home/.nemoclaw"
+  cat >"$_cli_home/.nemoclaw/sandboxes.json" <<'JSON'
+{"defaultSandbox":"placeholder-sandbox","sandboxes":{"placeholder-sandbox":{"name":"placeholder-sandbox"}}}
+JSON
 
   log "[cli] comparing: $NODE bin/nemoclaw.js --dump-commands"
   # shellcheck disable=SC2016
@@ -154,8 +159,9 @@ run_cli_check() {
   log '[cli]        vs: docs/reference/commands.md (### `nemoclaw …` headings only)'
 
   log "[cli] phase 1/2: dump canonical command list from registry"
-  if ! "$NODE" "$CLI_JS" --dump-commands >"$_tmp/help.txt" 2>"$_tmp/help.err"; then
+  if ! HOME="$_cli_home" "$NODE" "$CLI_JS" --dump-commands >"$_tmp/help.txt" 2>"$_tmp/help.err"; then
     cat "$_tmp/help.err" >&2
+    rm -rf "$_tmp"
     return 1
   fi
   LC_ALL=C sort -u -o "$_tmp/help.txt" "$_tmp/help.txt"
@@ -209,13 +215,10 @@ run_cli_check() {
   # Word-boundary regex avoids false positives where `--yes` is contained
   # in `--yes-i-accept-third-party-software`. Skips global -h/--help/--version.
   #
-  # Coverage caveat: most `nemoclaw <name> ...` commands (channels add,
-  # destroy, rebuild, doctor, skill install) gate `--help` behind
-  # sandbox-name validation that requires a registered sandbox. On a CI
-  # runner with no sandbox they emit only an error and we skip the empty
-  # help text. Flag drift on those commands is therefore not caught here;
-  # it would be caught by the existing E2E suite which runs against a real
-  # sandbox. Tracked as a follow-up to NemoClaw#3224.
+  # The check runs with an isolated HOME that contains a fake
+  # `placeholder-sandbox` registry entry. That keeps CI deterministic and lets
+  # sandbox-scoped commands print `--help` without touching the user's real
+  # ~/.nemoclaw state.
   log "[cli] phase 3/3: flag-level parity"
 
   # Awk extractor: print lines belonging to the section whose heading
@@ -249,6 +252,39 @@ run_cli_check() {
     ' "$md"
   }
 
+  extract_help_flags() {
+    printf '%s\n' "$1" | LC_ALL=C perl -CS -ne '
+      sub emit_flags {
+        my ($s) = @_;
+        while ($s =~ /--(?:\[no-\])?([a-z][a-z0-9-]+)/g) {
+          my $flag = $1;
+          my $matched = $&;
+          print "--$flag\n";
+          print "--no-$flag\n" if $matched =~ /^\Q--[no-]\E/;
+        }
+      }
+
+      if (/^\s*Usage:\s*(.*)$/i) {
+        $mode = "usage";
+        emit_flags($1);
+        next;
+      }
+      if (/^\s*USAGE\s*$/) {
+        $mode = "usage";
+        next;
+      }
+      if (/^\s*(FLAGS|GLOBAL FLAGS|Options):?\s*$/i) {
+        $mode = "flags";
+        next;
+      }
+      if (/^\s*(ARGUMENTS|DESCRIPTION|EXAMPLES)\s*$/i || /^\s*$/) {
+        $mode = "";
+        next;
+      }
+      emit_flags($_) if $mode;
+    ' | LC_ALL=C sort -u
+  }
+
   local _flag_drift=0
   while IFS= read -r cmd_line || [[ -n "$cmd_line" ]]; do
     [[ -z "$cmd_line" ]] && continue
@@ -276,16 +312,11 @@ run_cli_check() {
     #
     # Capture exit code separately so a real failure (broken command path,
     # crashed loader, etc.) propagates instead of being swallowed by
-    # `|| true`. Sandbox-name validation is the only expected failure mode
-    # on a CI runner with no registered sandbox; other non-zero exits abort.
+    # `|| true`.
     local _help_text _help_err _help_rc=0
     _help_err="$(mktemp)"
-    _help_text="$("$NODE" "$CLI_JS" "${_invoke_args[@]}" --help </dev/null 2>"$_help_err")" || _help_rc=$?
+    _help_text="$(HOME="$_cli_home" "$NODE" "$CLI_JS" "${_invoke_args[@]}" --help </dev/null 2>"$_help_err")" || _help_rc=$?
     if [[ "$_help_rc" -ne 0 ]]; then
-      if [[ "$cmd_line" == *"<name>"* ]] && grep -qi 'sandbox' "$_help_err"; then
-        rm -f "$_help_err"
-        continue
-      fi
       cat "$_help_err" >&2
       rm -f "$_help_err"
       rm -rf "$_tmp"
@@ -295,7 +326,7 @@ run_cli_check() {
     [[ -z "$_help_text" ]] && continue
 
     local _flags
-    _flags="$(echo "$_help_text" | grep -oE -- '--[a-z][a-z0-9-]+' | LC_ALL=C sort -u || true)"
+    _flags="$(extract_help_flags "$_help_text")"
     [[ -z "$_flags" ]] && continue
 
     local _section
