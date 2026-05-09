@@ -462,7 +462,7 @@ run_install_check() {
       | grep -v '(aliases:' \
       | sed 's/\\n//g' \
       | tr '"`,()|' '\n' \
-      | sed 's/[[:space:]]\+/\n/g' \
+      | awk '{ for (i = 1; i <= NF; i++) print $i }' \
       | grep -E '^[a-zA-Z][a-zA-Z0-9-]*$' \
       | grep -vxE 'printf|NEMOCLAW_PROVIDER' \
       | LC_ALL=C sort -u
