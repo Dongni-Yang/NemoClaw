@@ -22,6 +22,9 @@ function runHermes(
       env: {
         ...process.env,
         HOME: "/tmp/nemohermes-test-" + Date.now(),
+        // Clear inherited markers so the launcher under test sets them itself.
+        NEMOCLAW_AGENT: undefined,
+        NEMOCLAW_INVOKED_AS: undefined,
         NEMOCLAW_HEALTH_POLL_COUNT: "1",
         NEMOCLAW_HEALTH_POLL_INTERVAL: "0",
         ...env,
@@ -47,7 +50,11 @@ function runNemoClaw(
       env: {
         ...process.env,
         HOME: "/tmp/nemohermes-test-" + Date.now(),
+        // Clear inherited markers so the base nemoclaw bin has a clean slate.
+        // The base launcher does not set NEMOCLAW_INVOKED_AS, so leaving an
+        // inherited value would silently re-brand the CLI as the alias.
         NEMOCLAW_AGENT: undefined,
+        NEMOCLAW_INVOKED_AS: undefined,
         NEMOCLAW_HEALTH_POLL_COUNT: "1",
         NEMOCLAW_HEALTH_POLL_INTERVAL: "0",
         ...env,
