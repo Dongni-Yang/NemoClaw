@@ -20,6 +20,7 @@ const {
   createInferenceSelectionValidationHelpers,
 }: typeof import("./onboard/inference-selection-validation") = require("./onboard/inference-selection-validation");
 const { cleanupTempDir }: typeof import("./onboard/temp-files") = require("./onboard/temp-files");
+const { abortNonInteractive }: typeof import("./onboard/non-interactive-abort") = require("./onboard/non-interactive-abort");
 const { stopStaleDashboardListenersForSandbox } = require("./onboard/stale-gateway-cleanup");
 const {
   ensureOllamaLoopbackSystemdOverride,
@@ -4200,19 +4201,17 @@ async function selectAndValidateOllamaModel(
     const probe = await prepareOllamaModel(selectedModel, installedModels);
     if (!probe.ok) {
       console.error(`  ${probe.message}`);
-      if (isNonInteractive()) process.exit(1);
+      if (isNonInteractive()) abortNonInteractive(`Ollama model '${selectedModel}' unavailable.`);
       console.log("  Choose a different Ollama model or select Other.");
       console.log("");
       continue;
     }
     const validationBaseUrl = getLocalProviderValidationBaseUrl(provider);
-    if (!validationBaseUrl) {
-      console.error("  Local Ollama validation URL could not be determined.");
-      process.exit(1);
-    }
+    if (!validationBaseUrl)
+      abortNonInteractive("Local Ollama validation URL could not be determined.");
     const validation = await validateOpenAiLikeSelection(
       "Local Ollama",
-      validationBaseUrl,
+      validationBaseUrl!,
       selectedModel,
       null,
       "Choose a different Ollama model or select Other.",
@@ -4226,15 +4225,7 @@ async function selectAndValidateOllamaModel(
     );
     if (validation.retry === "selection") return { outcome: "back-to-selection" };
     if (!validation.ok) {
-      if (isNonInteractive()) {
-        console.error(
-          `  [non-interactive] Aborting: model '${selectedModel}' failed validation for the selected Ollama provider.`,
-        );
-        console.error(
-          "  Override with NEMOCLAW_MODEL=<model> or re-run interactively to choose a different model.",
-        );
-        process.exit(1);
-      }
+      if (isNonInteractive()) abortNonInteractive(`model '${selectedModel}' failed validation.`);
       continue;
     }
     // Ollama's /v1/responses endpoint does not produce correctly formatted
@@ -5283,12 +5274,7 @@ async function setupNim(
           ? installOllamaOnMacOS({ isNonInteractive, isUpgrade })
           : installOllamaOnLinux({ isNonInteractive, isUpgrade });
         if (!installResult.ok) {
-          if (isNonInteractive()) {
-            console.error(
-              "  [non-interactive] Aborting: Ollama install failed. See errors above.",
-            );
-            process.exit(1);
-          }
+          if (isNonInteractive()) abortNonInteractive("Ollama install failed. See errors above.");
           continue selectionLoop;
         }
         const upgradeCheck = assertOllamaUpgradeApplied(ollamaInstallMenu);
@@ -5335,12 +5321,7 @@ async function setupNim(
           promptFn: prompt,
         });
         if (!result.ok) {
-          if (isNonInteractive()) {
-            console.error(
-              "  [non-interactive] Aborting: vLLM install failed. See errors above.",
-            );
-            process.exit(1);
-          }
+          if (isNonInteractive()) abortNonInteractive("vLLM install failed. See errors above.");
           continue selectionLoop;
         }
         // Fall through to the same provider/model setup as the running-vLLM
