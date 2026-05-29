@@ -6,7 +6,7 @@
 // not the generic "Snapshot failed. Failed directories: ..." wording.
 
 import { describe, it, expect } from "vitest";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -17,9 +17,9 @@ const CLI = path.join(import.meta.dirname, "..", "bin", "nemoclaw.js");
 
 type CliRunResult = { code: number; out: string };
 
-function runCli(args: string, env: Record<string, string | undefined> = {}): CliRunResult {
+function runCli(args: string[], env: Record<string, string | undefined> = {}): CliRunResult {
   try {
-    const out = execSync(`node "${CLI}" ${args}`, {
+    const out = execFileSync("node", [CLI, ...args], {
       encoding: "utf-8",
       timeout: execTimeout(),
       env: {
@@ -123,7 +123,7 @@ describe("snapshot create — shields-up guard (#4493)", () => {
     const { home, env } = makeHealthyGatewayEnv("nemoclaw-snap-shields-up-");
     writeShieldsLocked(home, "alpha");
 
-    const r = runCli("alpha snapshot create", env);
+    const r = runCli(["alpha", "snapshot", "create"], env);
 
     expect(r.code).toBe(1);
     expect(r.out).toContain("shields are up");
@@ -134,7 +134,7 @@ describe("snapshot create — shields-up guard (#4493)", () => {
   it("does not block snapshot create when shields are not configured (mutable default)", () => {
     const { env } = makeHealthyGatewayEnv("nemoclaw-snap-shields-default-");
 
-    const r = runCli("alpha snapshot create", env);
+    const r = runCli(["alpha", "snapshot", "create"], env);
 
     expect(r.out).not.toContain("shields are up");
   });
