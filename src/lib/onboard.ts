@@ -6048,10 +6048,7 @@ async function selectTierPresetsAndAccess(
       process.removeListener("SIGTERM", onSigterm);
     };
 
-    const onSigterm = () => {
-      cleanup();
-      process.exit(1);
-    };
+    const onSigterm = makeOnboardCancelExit(sandboxCancelRollback, cleanup);
     process.once("SIGTERM", onSigterm);
 
     const onData = (key: string) => {
@@ -6064,8 +6061,7 @@ async function selectTierPresetsAndAccess(
             .map((p) => ({ name: p.name, access: accessModes[p.name] })),
         );
       } else if (key === "\x03") {
-        cleanup();
-        process.exit(1);
+        makeOnboardCancelExit(sandboxCancelRollback, cleanup)();
       } else if (key === "\x1b[A" || key === "k") {
         cursor = (cursor - 1 + n) % n;
         redraw();
