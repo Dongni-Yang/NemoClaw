@@ -24,28 +24,6 @@ export function wasSandboxDefault(
   return currentDefault === sandboxName;
 }
 
-export interface SandboxPriorState {
-  /** Whether the sandbox was already registered before this create run (any recreate path). */
-  existed: boolean;
-  /** Whether it was the default before this create run. */
-  wasDefault: boolean;
-}
-
-/**
- * Snapshot a sandbox's registry state at the start of createSandbox, before any
- * recreate path tears its entry down. `existed` gates cancel-rollback arming (only
- * arm genuinely new sandboxes); `wasDefault` drives {@link restoreDefaultAfterRecreate}.
- */
-export function captureSandboxPriorState(
-  registry: { getSandbox(name: string): unknown; getDefault(): string | null },
-  sandboxName: string,
-): SandboxPriorState {
-  return {
-    existed: registry.getSandbox(sandboxName) != null,
-    wasDefault: wasSandboxDefault(registry.getDefault(), sandboxName),
-  };
-}
-
 /** Re-apply the default flag after re-registration iff the sandbox held it beforehand. */
 export function restoreDefaultAfterRecreate(
   setDefault: (sandboxName: string) => void,

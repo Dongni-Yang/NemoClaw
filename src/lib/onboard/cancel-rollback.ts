@@ -3,11 +3,7 @@
 
 // Re-exported so the onboard entrypoint imports its sandbox default/cancel
 // lifecycle helpers from a single module.
-export {
-  captureSandboxPriorState,
-  restoreDefaultAfterRecreate,
-  wasSandboxDefault,
-} from "./default-preservation";
+export { restoreDefaultAfterRecreate, wasSandboxDefault } from "./default-preservation";
 
 /**
  * Rollback guard for a sandbox that was created during onboarding but whose

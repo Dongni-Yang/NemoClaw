@@ -424,7 +424,7 @@ const {
 } = modelRouter;
 const routedInference: typeof import("./onboard/routed-inference") = require("./onboard/routed-inference");
 const { OnboardRuntimeBoundary }: typeof import("./onboard/runtime-boundary") = require("./onboard/runtime-boundary");
-const { installSandboxCancelRollback, makeOnboardCancelExit, captureSandboxPriorState, restoreDefaultAfterRecreate }: typeof import("./onboard/cancel-rollback") = require("./onboard/cancel-rollback");
+const { installSandboxCancelRollback, makeOnboardCancelExit, wasSandboxDefault, restoreDefaultAfterRecreate }: typeof import("./onboard/cancel-rollback") = require("./onboard/cancel-rollback");
 const { handleAgentSetupState }: typeof import("./onboard/machine/handlers/agent-setup") = require("./onboard/machine/handlers/agent-setup");
 const { handleFinalizationState }: typeof import("./onboard/machine/handlers/finalization") = require("./onboard/machine/handlers/finalization");
 const { handleGatewayState }: typeof import("./onboard/machine/handlers/gateway") = require("./onboard/machine/handlers/gateway");
@@ -2783,7 +2783,6 @@ async function createSandbox(
     sandboxNameOverride ?? (await promptValidatedSandboxName(agent)),
     "sandbox name",
   );
-  const sandboxPrior = captureSandboxPriorState(registry, sandboxName); // #4614: pre-recreate snapshot
   enabledChannels = filterEnabledChannelsByAgent(enabledChannels, agent);
   const effectiveSandboxGpuConfig =
     sandboxGpuConfig ?? resolveSandboxGpuConfig(gpu, { flag: null, device: null });
@@ -2986,6 +2985,8 @@ async function createSandbox(
 
   // Reconcile local registry state with the live OpenShell gateway state.
   const liveExists = pruneStaleSandboxEntry(sandboxName);
+  // #4614: capture default AFTER prune so a stale registry row isn't read as a live sandbox.
+  const sandboxWasLiveDefault = liveExists && wasSandboxDefault(registry.getDefault(), sandboxName);
 
   // Declared outside the liveExists block so it is accessible during
   // post-creation restore (the sandbox create path runs after the block).
@@ -3820,7 +3821,7 @@ async function createSandbox(
     ...onboardHermesDashboard.getHermesDashboardRegistryFields(finalHermesDashboardState),
     dashboardPort: actualDashboardPort,
   });
-  restoreDefaultAfterRecreate(registry.setDefault, sandboxName, sandboxPrior.wasDefault); // #4614: default deferred to finalization
+  restoreDefaultAfterRecreate(registry.setDefault, sandboxName, sandboxWasLiveDefault); // #4614: default deferred to finalization
 
   if (restoreBackupPath) {
     note(
@@ -3865,8 +3866,8 @@ async function createSandbox(
 
   warnIfLandlockUnsupported({ dockerInfoFormat, runCapture });
 
-  // #4614: arm rollback only for a genuinely new sandbox (never a recreate/rebuild).
-  if (!sandboxPrior.existed) sandboxCancelRollback.arm(sandboxName);
+  // #4614: arm rollback only when the sandbox was not live before (never a recreate/rebuild).
+  if (!liveExists) sandboxCancelRollback.arm(sandboxName);
   return sandboxName;
 }
 
