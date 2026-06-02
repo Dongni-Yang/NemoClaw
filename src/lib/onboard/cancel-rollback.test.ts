@@ -6,6 +6,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildCancelRollbackMessage,
   createSandboxCancelRollback,
+  installSandboxCancelRollback,
+  makeOnboardCancelExit,
   type SandboxCancelRollbackDeps,
 } from "./cancel-rollback";
 
@@ -128,6 +130,62 @@ describe("createSandboxCancelRollback", () => {
 
     expect(calls.deleteContainer).toHaveBeenCalledWith("second");
     expect(calls.deleteContainer).not.toHaveBeenCalledWith("first");
+  });
+});
+
+describe("installSandboxCancelRollback", () => {
+  it("wires delete to openshell and unregister to the registry, and registers an exit hook", () => {
+    const runOpenshell = vi.fn(() => ({ status: 0 }));
+    const removeSandbox = vi.fn();
+    const exitHandlers: Array<() => void> = [];
+
+    const rollback = installSandboxCancelRollback({
+      runOpenshell,
+      registry: { removeSandbox },
+      registerExitHandler: (h) => exitHandlers.push(h),
+    });
+
+    expect(exitHandlers).toHaveLength(1);
+
+    rollback.arm("new-sb");
+    rollback.markCancelled();
+    exitHandlers[0]();
+
+    expect(runOpenshell).toHaveBeenCalledWith(["sandbox", "delete", "new-sb"], { ignoreError: true });
+    expect(removeSandbox).toHaveBeenCalledWith("new-sb");
+  });
+
+  it("does not fire the rollback on a non-cancel exit", () => {
+    const runOpenshell = vi.fn(() => ({ status: 0 }));
+    const removeSandbox = vi.fn();
+    const exitHandlers: Array<() => void> = [];
+
+    const rollback = installSandboxCancelRollback({
+      runOpenshell,
+      registry: { removeSandbox },
+      registerExitHandler: (h) => exitHandlers.push(h),
+    });
+    rollback.arm("new-sb"); // armed, but never cancelled
+    exitHandlers[0]();
+
+    expect(runOpenshell).not.toHaveBeenCalled();
+    expect(removeSandbox).not.toHaveBeenCalled();
+  });
+});
+
+describe("makeOnboardCancelExit", () => {
+  it("cleans up, marks cancelled, then exits non-zero", () => {
+    const order: string[] = [];
+    const cleanup = vi.fn(() => order.push("cleanup"));
+    const rollback = { markCancelled: vi.fn(() => order.push("markCancelled")) };
+    const exit = vi.fn((_code: number) => {
+      order.push("exit");
+    });
+
+    makeOnboardCancelExit(rollback, cleanup, exit)();
+
+    expect(order).toEqual(["cleanup", "markCancelled", "exit"]);
+    expect(exit).toHaveBeenCalledWith(1);
   });
 });
 

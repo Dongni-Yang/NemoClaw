@@ -1,6 +1,14 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+// Re-exported so the onboard entrypoint imports its sandbox default/cancel
+// lifecycle helpers from a single module.
+export {
+  captureSandboxPriorState,
+  restoreDefaultAfterRecreate,
+  wasSandboxDefault,
+} from "./default-preservation";
+
 /**
  * Rollback guard for a sandbox that was created during onboarding but whose
  * onboarding was cancelled before the policy-preset step was confirmed.
@@ -53,6 +61,58 @@ export function buildCancelRollbackMessage(sandboxName: string, deleteSucceeded:
     "  The sandbox container may still be running. Remove it with:",
     `    openshell sandbox delete "${sandboxName}"`,
   ];
+}
+
+export interface InstallSandboxCancelRollbackOptions {
+  runOpenshell: (args: string[], opts: { ignoreError: boolean }) => { status: number | null };
+  registry: { removeSandbox(name: string): void };
+  log?: (message: string) => void;
+  /** Override for tests; defaults to `process.on("exit", ...)`. */
+  registerExitHandler?: (handler: () => void) => void;
+}
+
+/**
+ * Wire a sandbox cancel-rollback to OpenShell + the registry and register the
+ * process-exit hook that fires it. Kept here (not in onboard.ts) so the
+ * orchestration lives in a focused module rather than the onboard entrypoint.
+ *
+ * `process.exit()` — how the policy-step prompts terminate on Ctrl+C —
+ * synchronously emits 'exit', and runOpenshell/removeSandbox are synchronous,
+ * so the rollback completes inside the handler. No-op unless armed AND cancelled.
+ */
+export function installSandboxCancelRollback(
+  opts: InstallSandboxCancelRollbackOptions,
+): SandboxCancelRollback {
+  const rollback = createSandboxCancelRollback({
+    deleteSandboxContainer: (name) =>
+      opts.runOpenshell(["sandbox", "delete", name], { ignoreError: true }).status === 0,
+    removeSandboxFromRegistry: (name) => opts.registry.removeSandbox(name),
+    log: opts.log ?? ((message) => console.error(message)),
+  });
+  const register =
+    opts.registerExitHandler ??
+    ((handler: () => void) => {
+      process.on("exit", handler);
+    });
+  register(() => rollback.runIfArmed());
+  return rollback;
+}
+
+/**
+ * Build the cancel handler the policy-step prompts run on Ctrl+C / SIGTERM:
+ * restore the terminal (`cleanup`), record the cancel, then exit non-zero.
+ * Shared so both the tier and preset selectors stay in sync.
+ */
+export function makeOnboardCancelExit(
+  rollback: Pick<SandboxCancelRollback, "markCancelled">,
+  cleanup: () => void,
+  exit: (code: number) => void = (code) => process.exit(code),
+): () => void {
+  return () => {
+    cleanup();
+    rollback.markCancelled();
+    exit(1);
+  };
 }
 
 export function createSandboxCancelRollback(

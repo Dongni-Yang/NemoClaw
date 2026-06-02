@@ -3,7 +3,28 @@
 
 import { describe, expect, it, vi } from "vitest";
 
-import { restoreDefaultAfterRecreate, wasSandboxDefault } from "./default-preservation";
+import {
+  captureSandboxPriorState,
+  restoreDefaultAfterRecreate,
+  wasSandboxDefault,
+} from "./default-preservation";
+
+describe("captureSandboxPriorState", () => {
+  it("reports a brand-new sandbox as neither existing nor default", () => {
+    const registry = { getSandbox: () => null, getDefault: () => "other" };
+    expect(captureSandboxPriorState(registry, "new-sb")).toEqual({ existed: false, wasDefault: false });
+  });
+
+  it("reports an existing default sandbox as existed + wasDefault", () => {
+    const registry = { getSandbox: () => ({ name: "sb" }), getDefault: () => "sb" };
+    expect(captureSandboxPriorState(registry, "sb")).toEqual({ existed: true, wasDefault: true });
+  });
+
+  it("reports an existing non-default sandbox as existed but not default", () => {
+    const registry = { getSandbox: () => ({ name: "sb" }), getDefault: () => "other" };
+    expect(captureSandboxPriorState(registry, "sb")).toEqual({ existed: true, wasDefault: false });
+  });
+});
 
 describe("wasSandboxDefault", () => {
   it("is true when the sandbox is the current default", () => {

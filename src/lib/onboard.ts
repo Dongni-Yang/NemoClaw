@@ -424,8 +424,7 @@ const {
 } = modelRouter;
 const routedInference: typeof import("./onboard/routed-inference") = require("./onboard/routed-inference");
 const { OnboardRuntimeBoundary }: typeof import("./onboard/runtime-boundary") = require("./onboard/runtime-boundary");
-const { createSandboxCancelRollback }: typeof import("./onboard/cancel-rollback") = require("./onboard/cancel-rollback");
-const { wasSandboxDefault, restoreDefaultAfterRecreate }: typeof import("./onboard/default-preservation") = require("./onboard/default-preservation");
+const { installSandboxCancelRollback, makeOnboardCancelExit, captureSandboxPriorState, restoreDefaultAfterRecreate }: typeof import("./onboard/cancel-rollback") = require("./onboard/cancel-rollback");
 const { handleAgentSetupState }: typeof import("./onboard/machine/handlers/agent-setup") = require("./onboard/machine/handlers/agent-setup");
 const { handleFinalizationState }: typeof import("./onboard/machine/handlers/finalization") = require("./onboard/machine/handlers/finalization");
 const { handleGatewayState }: typeof import("./onboard/machine/handlers/gateway") = require("./onboard/machine/handlers/gateway");
@@ -2784,10 +2783,7 @@ async function createSandbox(
     sandboxNameOverride ?? (await promptValidatedSandboxName(agent)),
     "sandbox name",
   );
-  // Snapshot whether this sandbox is the default before a recreate tears down
-  // its registry entry, so a rebuild that fails before finalization does not
-  // silently drop the default flag (#4614).
-  const sandboxWasDefaultBeforeCreate = wasSandboxDefault(registry.getDefault(), sandboxName);
+  const sandboxPrior = captureSandboxPriorState(registry, sandboxName); // #4614: pre-recreate snapshot
   enabledChannels = filterEnabledChannelsByAgent(enabledChannels, agent);
   const effectiveSandboxGpuConfig =
     sandboxGpuConfig ?? resolveSandboxGpuConfig(gpu, { flag: null, device: null });
@@ -3824,12 +3820,7 @@ async function createSandbox(
     ...onboardHermesDashboard.getHermesDashboardRegistryFields(finalHermesDashboardState),
     dashboardPort: actualDashboardPort,
   });
-  // Default is NOT set here for a brand-new sandbox — it is deferred to
-  // finalization so a cancel at the policy-preset step does not leave this
-  // sandbox registered as default (#4614). The one exception: a recreate/rebuild
-  // of a sandbox that was already the default restores that flag now, so a
-  // rebuild failure before finalization does not silently demote it.
-  restoreDefaultAfterRecreate(registry.setDefault, sandboxName, sandboxWasDefaultBeforeCreate);
+  restoreDefaultAfterRecreate(registry.setDefault, sandboxName, sandboxPrior.wasDefault); // #4614: default deferred to finalization
 
   if (restoreBackupPath) {
     note(
@@ -3874,18 +3865,8 @@ async function createSandbox(
 
   warnIfLandlockUnsupported({ dockerInfoFormat, runCapture });
 
-  // Arm cancel-rollback: from here until policies are confirmed, an operator
-  // cancel (Ctrl+C / SIGTERM) at the policy-preset step rolls this sandbox back
-  // instead of leaving it registered as the default (#4614).
-  //
-  // Only arm for brand-new creations. A recreate/rebuild (`--recreate`, drift
-  // repair, `nemoclaw rebuild`) is replacing a sandbox the operator already
-  // had, so deleting it on cancel would destroy existing state — for those we
-  // only defer the default-marking, never auto-delete.
-  if (!isRecreateSandbox()) {
-    sandboxCancelRollback.arm(sandboxName);
-  }
-
+  // #4614: arm rollback only for a genuinely new sandbox (never a recreate/rebuild).
+  if (!sandboxPrior.existed) sandboxCancelRollback.arm(sandboxName);
   return sandboxName;
 }
 
@@ -5879,11 +5860,7 @@ async function selectPolicyTier(): Promise<string> {
       process.removeListener("SIGTERM", onSigterm);
     };
 
-    const onSigterm = () => {
-      cleanup();
-      sandboxCancelRollback.markCancelled();
-      process.exit(1);
-    };
+    const onSigterm = makeOnboardCancelExit(sandboxCancelRollback, cleanup);
     process.once("SIGTERM", onSigterm);
 
     const onData = (key: string) => {
@@ -5895,9 +5872,7 @@ async function selectPolicyTier(): Promise<string> {
         selectedIdx = cursor;
         redraw();
       } else if (key === "\x03") {
-        cleanup();
-        sandboxCancelRollback.markCancelled();
-        process.exit(1);
+        makeOnboardCancelExit(sandboxCancelRollback, cleanup)();
       } else if (key === "\x1b[A" || key === "k") {
         cursor = (cursor - 1 + n) % n;
         redraw();
@@ -6222,11 +6197,7 @@ async function presetsCheckboxSelector(
       process.removeListener("SIGTERM", onSigterm);
     };
 
-    const onSigterm = () => {
-      cleanup();
-      sandboxCancelRollback.markCancelled();
-      process.exit(1);
-    };
+    const onSigterm = makeOnboardCancelExit(sandboxCancelRollback, cleanup);
     process.once("SIGTERM", onSigterm);
 
     const onData = (key: string) => {
@@ -6235,10 +6206,7 @@ async function presetsCheckboxSelector(
         process.stdout.write("\n");
         resolve([...selected]);
       } else if (key === "\x03") {
-        // Ctrl+C
-        cleanup();
-        sandboxCancelRollback.markCancelled();
-        process.exit(1);
+        makeOnboardCancelExit(sandboxCancelRollback, cleanup)(); // Ctrl+C
       } else if (key === "\x1b[A" || key === "k") {
         cursor = (cursor - 1 + n) % n;
         redraw();
@@ -6329,20 +6297,7 @@ const onboardRuntimeBoundary = new OnboardRuntimeBoundary({
   maybeForceE2eStepFailure,
 });
 
-// Rolls back a freshly-created sandbox if the operator cancels (Ctrl+C / SIGTERM)
-// before the policy-preset step is confirmed. Armed after createSandbox succeeds,
-// disarmed once policies are applied; only fires on an explicit cancel, so ordinary
-// failure-path exits leave their sandbox untouched (#4614).
-const sandboxCancelRollback = createSandboxCancelRollback({
-  deleteSandboxContainer: (name) =>
-    runOpenshell(["sandbox", "delete", name], { ignoreError: true }).status === 0,
-  removeSandboxFromRegistry: (name) => registry.removeSandbox(name),
-  log: (message) => console.error(message),
-});
-// `process.exit()` (how the policy-step prompts terminate on Ctrl+C) synchronously
-// emits 'exit', and runOpenshell/removeSandbox are synchronous, so the rollback
-// completes inside the handler. No-op unless armed AND cancelled.
-process.on("exit", () => sandboxCancelRollback.runIfArmed());
+const sandboxCancelRollback = installSandboxCancelRollback({ runOpenshell, registry }); // #4614
 
 const startRecordedStep = onboardRuntimeBoundary.startRecordedStep.bind(onboardRuntimeBoundary);
 const recordStepComplete = onboardRuntimeBoundary.recordStepComplete.bind(onboardRuntimeBoundary);
@@ -7058,10 +7013,7 @@ async function onboard(opts: OnboardOptions = {}): Promise<void> {
       },
     });
     session = policiesResult.session;
-
-    // Policies are confirmed — the sandbox is no longer in the cancellable
-    // window, so disarm the cancel-rollback before finalization (#4614).
-    sandboxCancelRollback.disarm();
+    sandboxCancelRollback.disarm(); // #4614: policies confirmed, past the cancellable window
 
     await handleFinalizationState({
       sandboxName,
