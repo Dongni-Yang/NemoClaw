@@ -425,6 +425,7 @@ const {
 const routedInference: typeof import("./onboard/routed-inference") = require("./onboard/routed-inference");
 const { OnboardRuntimeBoundary }: typeof import("./onboard/runtime-boundary") = require("./onboard/runtime-boundary");
 const { createSandboxCancelRollback }: typeof import("./onboard/cancel-rollback") = require("./onboard/cancel-rollback");
+const { wasSandboxDefault, restoreDefaultAfterRecreate }: typeof import("./onboard/default-preservation") = require("./onboard/default-preservation");
 const { handleAgentSetupState }: typeof import("./onboard/machine/handlers/agent-setup") = require("./onboard/machine/handlers/agent-setup");
 const { handleFinalizationState }: typeof import("./onboard/machine/handlers/finalization") = require("./onboard/machine/handlers/finalization");
 const { handleGatewayState }: typeof import("./onboard/machine/handlers/gateway") = require("./onboard/machine/handlers/gateway");
@@ -2783,6 +2784,10 @@ async function createSandbox(
     sandboxNameOverride ?? (await promptValidatedSandboxName(agent)),
     "sandbox name",
   );
+  // Snapshot whether this sandbox is the default before a recreate tears down
+  // its registry entry, so a rebuild that fails before finalization does not
+  // silently drop the default flag (#4614).
+  const sandboxWasDefaultBeforeCreate = wasSandboxDefault(registry.getDefault(), sandboxName);
   enabledChannels = filterEnabledChannelsByAgent(enabledChannels, agent);
   const effectiveSandboxGpuConfig =
     sandboxGpuConfig ?? resolveSandboxGpuConfig(gpu, { flag: null, device: null });
@@ -3819,8 +3824,12 @@ async function createSandbox(
     ...onboardHermesDashboard.getHermesDashboardRegistryFields(finalHermesDashboardState),
     dashboardPort: actualDashboardPort,
   });
-  // Default is NOT set here — it is deferred to finalization so a cancel at the
-  // policy-preset step does not leave this sandbox registered as default (#4614).
+  // Default is NOT set here for a brand-new sandbox — it is deferred to
+  // finalization so a cancel at the policy-preset step does not leave this
+  // sandbox registered as default (#4614). The one exception: a recreate/rebuild
+  // of a sandbox that was already the default restores that flag now, so a
+  // rebuild failure before finalization does not silently demote it.
+  restoreDefaultAfterRecreate(registry.setDefault, sandboxName, sandboxWasDefaultBeforeCreate);
 
   if (restoreBackupPath) {
     note(
