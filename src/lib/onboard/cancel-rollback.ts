@@ -27,6 +27,12 @@ export interface SandboxCancelRollbackDeps {
   deleteSandboxContainer(sandboxName: string): boolean;
   /** Remove the sandbox entry from the NemoClaw registry (clears default). */
   removeSandboxFromRegistry(sandboxName: string): void;
+  /**
+   * Discard the onboard session for the aborted run. Without this, the session
+   * still records the sandbox step as "complete", and `nemoclaw list`'s
+   * session-recovery resurrects the just-removed sandbox as a phantom entry.
+   */
+  clearOnboardSession(): void;
   /** Emit an operator-facing line (stderr). */
   log(message: string): void;
 }
@@ -62,6 +68,7 @@ export function buildCancelRollbackMessage(sandboxName: string, deleteSucceeded:
 export interface InstallSandboxCancelRollbackOptions {
   runOpenshell: (args: string[], opts: { ignoreError: boolean }) => { status: number | null };
   registry: { removeSandbox(name: string): void };
+  clearOnboardSession: () => void;
   log?: (message: string) => void;
   /** Override for tests; defaults to `process.on("exit", ...)`. */
   registerExitHandler?: (handler: () => void) => void;
@@ -83,6 +90,7 @@ export function installSandboxCancelRollback(
     deleteSandboxContainer: (name) =>
       opts.runOpenshell(["sandbox", "delete", name], { ignoreError: true }).status === 0,
     removeSandboxFromRegistry: (name) => opts.registry.removeSandbox(name),
+    clearOnboardSession: opts.clearOnboardSession,
     log: opts.log ?? ((message) => console.error(message)),
   });
   const register =
@@ -142,6 +150,8 @@ export function createSandboxCancelRollback(
       // worse than an orphaned container the operator can clean up manually.
       const deleteSucceeded = deps.deleteSandboxContainer(sandboxName);
       deps.removeSandboxFromRegistry(sandboxName);
+      // Discard the aborted session so `nemoclaw list` recovery doesn't resurrect it.
+      deps.clearOnboardSession();
       for (const line of buildCancelRollbackMessage(sandboxName, deleteSucceeded)) {
         deps.log(line);
       }

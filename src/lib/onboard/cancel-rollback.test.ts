@@ -15,11 +15,13 @@ function createDeps(overrides: Partial<SandboxCancelRollbackDeps> = {}) {
   const calls = {
     deleteContainer: vi.fn((_name: string) => true),
     removeFromRegistry: vi.fn(),
+    clearSession: vi.fn(),
     log: vi.fn(),
   };
   const deps: SandboxCancelRollbackDeps = {
     deleteSandboxContainer: calls.deleteContainer,
     removeSandboxFromRegistry: calls.removeFromRegistry,
+    clearOnboardSession: calls.clearSession,
     log: calls.log,
     ...overrides,
   };
@@ -37,6 +39,8 @@ describe("createSandboxCancelRollback", () => {
 
     expect(calls.deleteContainer).toHaveBeenCalledWith("new-sb");
     expect(calls.removeFromRegistry).toHaveBeenCalledWith("new-sb");
+    // also discards the aborted session so `nemoclaw list` recovery can't resurrect it
+    expect(calls.clearSession).toHaveBeenCalledOnce();
     // delete is attempted before the registry entry is removed
     expect(calls.deleteContainer.mock.invocationCallOrder[0]).toBeLessThan(
       calls.removeFromRegistry.mock.invocationCallOrder[0],
@@ -67,6 +71,7 @@ describe("createSandboxCancelRollback", () => {
 
     expect(calls.deleteContainer).not.toHaveBeenCalled();
     expect(calls.removeFromRegistry).not.toHaveBeenCalled();
+    expect(calls.clearSession).not.toHaveBeenCalled();
     expect(calls.log).not.toHaveBeenCalled();
   });
 
@@ -142,6 +147,7 @@ describe("installSandboxCancelRollback", () => {
     const rollback = installSandboxCancelRollback({
       runOpenshell,
       registry: { removeSandbox },
+      clearOnboardSession: () => {},
       registerExitHandler: (h) => exitHandlers.push(h),
     });
 
@@ -163,6 +169,7 @@ describe("installSandboxCancelRollback", () => {
     const rollback = installSandboxCancelRollback({
       runOpenshell,
       registry: { removeSandbox },
+      clearOnboardSession: () => {},
       registerExitHandler: (h) => exitHandlers.push(h),
     });
     rollback.arm("new-sb"); // armed, but never cancelled

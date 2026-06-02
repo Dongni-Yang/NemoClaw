@@ -6294,7 +6294,7 @@ const onboardRuntimeBoundary = new OnboardRuntimeBoundary({
   maybeForceE2eStepFailure,
 });
 
-const sandboxCancelRollback = installSandboxCancelRollback({ runOpenshell, registry }); // #4614
+const sandboxCancelRollback = installSandboxCancelRollback({ runOpenshell, registry, clearOnboardSession: onboardSession.clearSession }); // #4614
 
 const startRecordedStep = onboardRuntimeBoundary.startRecordedStep.bind(onboardRuntimeBoundary);
 const recordStepComplete = onboardRuntimeBoundary.recordStepComplete.bind(onboardRuntimeBoundary);
