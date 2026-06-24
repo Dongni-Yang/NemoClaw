@@ -20,6 +20,7 @@ export interface SandboxCreateFailure {
     | "sandbox_create_incomplete"
     | "tls_cert_mismatch"
     | "gpu_cdi_injection_failed"
+    | "plugin_install_network_denied"
     | "unknown";
   uploadedToGateway: boolean;
 }
@@ -133,6 +134,13 @@ export function classifySandboxCreateFailure(output = ""): SandboxCreateFailure 
     /nvidia\.com\/gpu[^\n]*(CDI device injection failed|unresolvable CDI devices?)/i.test(text)
   ) {
     return { kind: "gpu_cdi_injection_failed", uploadedToGateway };
+  }
+  // The Docker build RUN step that runs `openclaw plugins install` embeds the
+  // command text in its failure message. Match it so the hint can surface the
+  // likely cause (network policy blocking npm/ClawHub egress) instead of the
+  // generic recovery line. See #4127 / follow-up from #4125.
+  if (/openclaw plugins install|npm:@openclaw\//i.test(text)) {
+    return { kind: "plugin_install_network_denied", uploadedToGateway };
   }
   if (/Created sandbox:/i.test(text)) {
     return { kind: "sandbox_create_incomplete", uploadedToGateway: true };

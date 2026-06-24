@@ -289,6 +289,29 @@ describe("classifySandboxCreateFailure", () => {
     ).toBe("unknown");
     expect(classifySandboxCreateFailure("HTTP 404: model not found").kind).toBe("unknown");
   });
+
+  it("detects plugin install failure from the npm:@openclaw/ package spec in the failed command", () => {
+    const output = [
+      "Docker stream error: The command '/bin/bash -o pipefail -c set -eu;",
+      '  openclaw plugins install "npm:@openclaw/brave-plugin@2026.5.27" --pin;',
+      "  BRAVE_API_KEY=openshell:resolve:env:BRAVE_API_KEY openclaw doctor --fix --non-interactive;",
+      "fi' returned a non-zero code: 1",
+    ].join("\n");
+    const result = classifySandboxCreateFailure(output);
+    expect(result.kind).toBe("plugin_install_network_denied");
+    expect(result.uploadedToGateway).toBe(false);
+  });
+
+  it("detects plugin install failure from the openclaw plugins install command text", () => {
+    const output =
+      "The command '...openclaw plugins install npm:@openclaw/diagnostics-otel@2026.5.27 --pin...' returned a non-zero code: 1";
+    expect(classifySandboxCreateFailure(output).kind).toBe("plugin_install_network_denied");
+  });
+
+  it("does NOT classify unrelated failures as plugin_install_network_denied", () => {
+    expect(classifySandboxCreateFailure("npm install failed with ENOENT").kind).toBe("unknown");
+    expect(classifySandboxCreateFailure("openclaw doctor --fix failed").kind).toBe("unknown");
+  });
 });
 
 describe("planSandboxCreateRecovery", () => {
