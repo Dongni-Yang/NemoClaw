@@ -312,6 +312,18 @@ describe("classifySandboxCreateFailure", () => {
     expect(classifySandboxCreateFailure("npm install failed with ENOENT").kind).toBe("unknown");
     expect(classifySandboxCreateFailure("openclaw doctor --fix failed").kind).toBe("unknown");
   });
+
+  it("does NOT classify as plugin_install_network_denied when plugin install step succeeded and a later step failed", () => {
+    const output = [
+      "Step 3/10 : RUN openclaw plugins install npm:@openclaw/brave-plugin@2026.5.27 --pin",
+      " ---> Running in abc123",
+      " ---> def456",
+      "Step 4/10 : RUN fail-step",
+      " ---> Running in xyz789",
+      "The command '/bin/sh -c fail-step' returned a non-zero code: 1",
+    ].join("\n");
+    expect(classifySandboxCreateFailure(output).kind).toBe("unknown");
+  });
 });
 
 describe("planSandboxCreateRecovery", () => {
