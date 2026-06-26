@@ -135,15 +135,17 @@ export function classifySandboxCreateFailure(output = ""): SandboxCreateFailure 
   ) {
     return { kind: "gpu_cdi_injection_failed", uploadedToGateway };
   }
-  // The Docker build RUN step that runs `openclaw plugins install` embeds the
-  // command text in its failure message. Anchor to the Docker error block
-  // (The command '...' returned a non-zero code) so a step-header occurrence
-  // of the command — when the plugin step itself succeeded and a later step
-  // failed — does not fire the wrong hint. [^']* matches newlines in JS
-  // character classes, so multi-line command text is handled correctly.
-  // See #4127 / follow-up from #4125.
+  // Require BOTH the failed Docker command block containing the plugin-install
+  // step AND a network/egress reachability error so that non-network failures
+  // (package-not-found, version conflicts, auth errors) fall through to the
+  // generic recovery rather than showing a misleading network-policy hint.
+  // [^']* matches newlines in JS character classes, so multi-line command text
+  // is handled correctly. See #4127 / follow-up from #4125.
   if (
     /The command '[^']*(?:openclaw plugins install|npm:@openclaw\/)[^']*'\s*returned a non-zero code/i.test(
+      text,
+    ) &&
+    /ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ETIMEDOUT|ESOCKETTIMEDOUT|network request.*failed|getaddrinfo|fetch failed|socket hang up|network timeout/i.test(
       text,
     )
   ) {

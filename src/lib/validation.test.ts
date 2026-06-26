@@ -290,8 +290,11 @@ describe("classifySandboxCreateFailure", () => {
     expect(classifySandboxCreateFailure("HTTP 404: model not found").kind).toBe("unknown");
   });
 
-  it("detects plugin install failure from the npm:@openclaw/ package spec in the failed command", () => {
+  it("detects plugin install network denial from ENOTFOUND against the npm registry", () => {
     const output = [
+      "npm error code ENOTFOUND",
+      "npm error errno ENOTFOUND",
+      "npm error network request to https://registry.npmjs.org/@openclaw%2Fbrave-plugin failed, reason: getaddrinfo ENOTFOUND registry.npmjs.org",
       "Docker stream error: The command '/bin/bash -o pipefail -c set -eu;",
       '  openclaw plugins install "npm:@openclaw/brave-plugin@2026.5.27" --pin;',
       "  BRAVE_API_KEY=openshell:resolve:env:BRAVE_API_KEY openclaw doctor --fix --non-interactive;",
@@ -302,15 +305,28 @@ describe("classifySandboxCreateFailure", () => {
     expect(result.uploadedToGateway).toBe(false);
   });
 
-  it("detects plugin install failure from the openclaw plugins install command text", () => {
-    const output =
-      "The command '...openclaw plugins install npm:@openclaw/diagnostics-otel@2026.5.27 --pin...' returned a non-zero code: 1";
+  it("detects plugin install network denial from ECONNREFUSED against ClawHub", () => {
+    const output = [
+      "npm error code ECONNREFUSED",
+      "npm error network request to https://registry.clawhub.io/@openclaw%2Fdiagnostics-otel failed, reason: connect ECONNREFUSED 34.120.54.1:443",
+      "The command '...openclaw plugins install npm:@openclaw/diagnostics-otel@2026.5.27 --pin...' returned a non-zero code: 1",
+    ].join("\n");
     expect(classifySandboxCreateFailure(output).kind).toBe("plugin_install_network_denied");
   });
 
   it("does NOT classify unrelated failures as plugin_install_network_denied", () => {
     expect(classifySandboxCreateFailure("npm install failed with ENOENT").kind).toBe("unknown");
     expect(classifySandboxCreateFailure("openclaw doctor --fix failed").kind).toBe("unknown");
+  });
+
+  it("does NOT classify as plugin_install_network_denied when plugin install fails for a non-network reason", () => {
+    const output = [
+      "npm error code E404",
+      "npm error 404 Not Found - GET https://registry.npmjs.org/@openclaw%2Fmissing-plugin",
+      "npm error 404 '@openclaw/missing-plugin@0.0.0' is not in the npm registry",
+      "The command '/bin/bash -c openclaw plugins install npm:@openclaw/missing-plugin@0.0.0 --pin' returned a non-zero code: 1",
+    ].join("\n");
+    expect(classifySandboxCreateFailure(output).kind).toBe("unknown");
   });
 
   it("does NOT classify as plugin_install_network_denied when plugin install step succeeded and a later step failed", () => {
